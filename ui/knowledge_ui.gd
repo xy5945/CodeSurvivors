@@ -6,9 +6,10 @@ extends CanvasLayer
 ## 三条设计约束（改这里之前先读）：
 ##
 ## 1. **不打断游戏**。它和升级弹窗最大的区别就在这里 —— 升级要暂停、要点鼠标，
-##    知识卡什么都不暂停，玩家一边躲怪一边瞄一眼就够。所以卡片放右下角
-##   （640x360 的视口里，左下是 Build 摘要、正中是玩家，只有右下是空的），
-##    而且永远不接受鼠标操作 —— 游戏中光标是隐藏的，让孩子去点卡片是找罪受。
+##    知识卡什么都不暂停，玩家一边躲怪一边瞄一眼就够。所以卡片放右上角，
+##    顶部与左上角的状态行（血条/Lv/FPS）平齐 —— 那一块在多数时候是空的，
+##    也不挡玩家与敌群交火的中轴线（用户 2026-09-17 指定红框区域）。
+##    永远不接受鼠标操作 —— 游戏中光标是隐藏的，让孩子去点卡片是找罪受。
 ##
 ## 2. **一次只显示一张，其余排队**。开局会同时触发"起始武器 + 变量"两张，
 ##    6 分钟后精英出场又是一堆。不排队的话角落里会叠成一摞，等于没做。
@@ -21,8 +22,9 @@ extends CanvasLayer
 ## 对机构来说，图鉴里那张表才是能直接拿去当课件素材的东西。
 ##
 
-const CARD_W := 250.0
-const CARD_H := 130.0
+const CARD_W := 300.0     # 右上角红框区域可用宽度约 310（从 Boss 血条右侧到屏幕边）
+const CARD_H := 124.0
+const CARD_TOP := 12.0    # 顶部与左上角血条/Lv/FPS 状态行平齐
 const HOLD := 6.0            # 只有一张时停留时长：读完三行中文大概要这么久
 const HOLD_QUEUED := 4.0     # 后面还排着队就缩短，否则追不上触发速度
 const FADE_IN := 0.22
@@ -155,18 +157,18 @@ func _build_card() -> void:
 	add_child(root)
 
 	_card = Panel.new()
-	# 锚在右下角。不用 set_anchors_preset —— 它的 offset 推算依赖调用时的父矩形，
+	# 锚在右上角，顶部与左上角那排状态文字（血条/Lv/FPS 行）平齐。
+	# 不用 set_anchors_preset —— 它的 offset 推算依赖调用时的父矩形，
 	# _ready 阶段父级还没布局，算出来的锚点会错（实测卡片飘到屏幕外）。
-	# 显式写四个 anchors + 四个 offsets，行为完全确定：右下角往里缩 12px，
-	# 底部抬高 44px 给左下角的 Build 摘要让位。
+	# 显式写四个 anchors + 四个 offsets，行为完全确定。
 	_card.anchor_left = 1.0
 	_card.anchor_right = 1.0
-	_card.anchor_top = 1.0
-	_card.anchor_bottom = 1.0
+	_card.anchor_top = 0.0
+	_card.anchor_bottom = 0.0
 	_card.offset_left = -CARD_W - 12.0
 	_card.offset_right = -12.0
-	_card.offset_top = -CARD_H - 44.0
-	_card.offset_bottom = -44.0
+	_card.offset_top = CARD_TOP
+	_card.offset_bottom = CARD_TOP + CARD_H
 	_card.modulate.a = 0.0
 	root.add_child(_card)
 
@@ -198,24 +200,24 @@ func _build_card() -> void:
 	vb.add_child(_head)
 
 	_term = Label.new()
-	UiFont.apply(_term, 21, C_TERM)
+	UiFont.apply(_term, 22, C_TERM)
 	vb.add_child(_term)
 
 	_code = Label.new()
-	UiFont.apply(_code, 11, C_CODE)
+	UiFont.apply(_code, 12, C_CODE)
 	vb.add_child(_code)
 
 	vb.add_child(_spacer(3))
 
 	_plain = Label.new()
-	UiFont.apply(_plain, 13, C_PLAIN)
+	UiFont.apply(_plain, 14, C_PLAIN)
 	_plain.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	vb.add_child(_plain)
 
 	vb.add_child(_spacer(2))
 
 	_use = Label.new()
-	UiFont.apply(_use, 10, C_USE)
+	UiFont.apply(_use, 11, C_USE)
 	_use.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	vb.add_child(_use)
 
