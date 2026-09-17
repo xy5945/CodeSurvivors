@@ -190,9 +190,12 @@ static func run_smoke(minutes: float = 10.0) -> void:
 		sim.patches_collected, sim.chests_collected,
 		" · 通关" if sim.victory else (" · Boss 仍存活" if sim.boss_active else "")
 	])
-	print("技能：精英冲刺 %d · Boss 冲刺 %d · Boss 召唤 %d 波（全程为 0 = 技能没跑起来）" % [
-		sim.elite_dashes, sim.boss_dashes, sim.boss_summons
+	print("技能：精英 %d 次（冲刺 %d · 环形弹幕 %d · 死亡分裂 %d）· Boss %d 次（冲刺 %d · 环形 %d · 扇形 %d · 追踪 %d · 危险区 %d）· 召唤 %d 波" % [
+		sim.elite_skills, sim.elite_dashes, sim.elite_novas, sim.elite_splits,
+		sim.boss_skills, sim.boss_dashes, sim.boss_novas, sim.boss_aimeds,
+		sim.boss_homings, sim.boss_hazards, sim.boss_summons
 	])
+	print("敌方弹幕：累计发射 %d 发 · 当前场上 %d 发" % [sim.bullets_fired, sim.bullets.count])
 	var build := []
 	for u in UpgradeDefs.UPGRADES:
 		var lv := sim.loadout.level_of(u["id"])
@@ -539,18 +542,185 @@ static func run_boss_test() -> void:
 	print("击杀耗时 %.1f 秒 · victory=%s · 地面宝箱 %d · 已拾取 %d · 累计回血 %.0f" % [
 		t, sim.victory, chests_on_ground, sim.chests_collected, sim.healed_total
 	])
-	print("技能统计：Boss 冲刺 %d 次 · 召唤 %d 波 · 场上小怪 %d（召唤切后排的验证）" % [
-		sim.boss_dashes, sim.boss_summons, sim.enemies.count
+	print("技能统计：Boss 技能 %d 次（冲刺 %d · 环形弹幕 %d · 扇形 %d · 追踪 %d · 危险区 %d）· 召唤 %d 波 · 场上小怪 %d" % [
+		sim.boss_skills, sim.boss_dashes, sim.boss_novas, sim.boss_aimeds,
+		sim.boss_homings, sim.boss_hazards, sim.boss_summons, sim.enemies.count
 	])
+	print("弹幕：累计发射 %d 发；危险区留在场上的预警圈由 HazardStore 管理" % sim.bullets_fired)
 
 	if sim.victory and chests_on_ground + sim.chests_collected >= 3:
-		var skills_ok := sim.boss_dashes >= 1 and sim.boss_summons >= 1
-		print("PASS：Boss 出场 → 血条数据 → 击杀 → 宝箱掉落 → 通关判定，链路完整"
-			+ ("" if skills_ok else "，但技能一次没放（FAIL 项）"))
+		# 五种技能必须都出现过至少一次：轮盘一旦卡住（比如某个技能的
+		# 前置条件永远不满足），表现就是"Boss 只会普攻"，而那是看不见的 bug。
+		var kinds: Array = [sim.boss_dashes, sim.boss_novas, sim.boss_aimeds,
+			sim.boss_homings, sim.boss_hazards]
+		var missing := 0
+		for v in kinds:
+			if int(v) < 1:
+				missing += 1
+		var skills_ok := sim.boss_skills >= 8 and sim.boss_summons >= 1 and missing == 0
+		print("PASS：Boss 出场 → 血条数据 → 技能轮盘 → 击杀 → 宝箱掉落 → 通关判定，链路完整"
+			+ ("" if skills_ok else "，但技能覆盖不足（FAIL 项）"))
 		if not skills_ok:
-			print("FAIL：Boss 冲刺/召唤一次都没触发 —— 技能状态机没跑起来")
+			print("FAIL：Boss 技能总次数 %d（期望 ≥8）· 未出现的技能种类 %d 种 —— 技能轮盘没转起来"
+				% [sim.boss_skills, missing])
 			return
-		var ok_sec := t > 8.0 and t < 75.0
-		print("决战时长 %s（期望 8~75 秒：太短没有压迫感，太长变磨血）" % ("合适" if ok_sec else "需调整血量"))
+		# 站桩满级 TTK 是"玩家一次都不躲"的下限值，所以窗口要按"下限 ≥60 秒"卡：
+		# 实际对局玩家还要躲弹幕、清杂兵，真实时长只会比它更长。
+		var ok_sec := t >= 52.0 and t <= 150.0
+		print("决战时长 %s（站桩满级 %.1f 秒；期望 52~150 秒的下限窗口 —— 太短没有压迫感，太长变磨血）"
+			% ["合适" if ok_sec else "需调整血量", t])
 	else:
 		print("FAIL：Boss 链路有断点（没打死或没掉宝箱）")
+
+
+## 精英 / Boss 技能链路 + "必须走位"的量化验证。
+##
+## 运行：godot --headless --path . -- --skilltest
+##
+## 三段：
+##   A 精英：摆一只精英在 320px 外，看技能轮盘转不转、弹幕有没有真的飞出来。
+##   B Boss：满级 build 站桩打 Boss，确认五种技能全部出现过。
+##   C 走位：同样的 Boss 战跑两遍 —— 一遍站桩、一遍"会躲"——
+##     血量曲线就是"必须走位"的硬证据。这一段的结论不能靠感觉。
+static func run_skill_test() -> void:
+	print("")
+	print("=== 精英 / Boss 技能链路测试 ===")
+
+	# ---------------- A. 精英技能 ----------------
+	var s1 := Sim.new()
+	s1.setup()
+	s1.god_mode = true          # 只看技能，不让玩家中途死掉（死了就没人给它打了）
+	s1.spawn_enabled = false
+	var ei := EnemyDB.idx_of(EnemyDB.ELITE_ID)
+	var ed: Dictionary = EnemyDB.DEFS[ei]
+	s1.enemies.spawn(s1.player_x + 320.0, s1.player_y, ed.hp, ed.speed, ed.radius, ei)
+	s1.grid.rebuild(s1.enemies)
+
+	var peak_b := 0
+	var elite_hp0: float = ed.hp
+	for i in int(45.0 / GameConfig.FIXED_DT):
+		s1.step(GameConfig.FIXED_DT, 0.0, 0.0)
+		peak_b = maxi(peak_b, s1.bullets.count)
+	var elite_left := 0
+	var elite_hp_left := 0.0
+	for i in s1.enemies.count:
+		if s1.enemies.type[i] == ei:
+			elite_left += 1
+			elite_hp_left = s1.enemies.hp[i]
+	print("A 精英 45 秒（玩家不动，看它放什么）")
+	print("   技能 %d 次（冲刺 %d · 环形弹幕 %d）· 发射弹幕 %d 发 · 同屏峰值 %d 发"
+		% [s1.elite_skills, s1.elite_dashes, s1.elite_novas, s1.bullets_fired, peak_b])
+	print("   精英存活 %d 只 · 血量 %.0f / %.0f（hp 从 150 提到 350 = 磨得动但更久）"
+		% [elite_left, elite_hp_left, elite_hp0])
+	print("   存活 %s" % ("是 —— 技能状态机没跑起来" if s1.elite_skills == 0 else "是"))
+
+	# ---------------- B. Boss 五技能覆盖 ----------------
+	var s2 := Sim.new()
+	s2.setup()
+	s2.god_mode = true
+	s2.spawn_enabled = false
+	for u in UpgradeDefs.UPGRADES:
+		s2.loadout.levels[str(u["id"])] = int(u["max"])
+	s2.loadout.recompute()
+	var bi := EnemyDB.idx_of(EnemyDB.BOSS_ID)
+	var bd: Dictionary = EnemyDB.DEFS[bi]
+	s2.enemies.spawn(s2.player_x + 220.0, s2.player_y, bd.hp, bd.speed, bd.radius, bi)
+	s2._update_boss(0.0)
+
+	var peak_b2 := 0
+	var boss_t := 0.0
+	var max_steps := int(150.0 / GameConfig.FIXED_DT)
+	var st := 0
+	while st < max_steps and not s2.victory:
+		s2.step(GameConfig.FIXED_DT, 0.0, 0.0)
+		peak_b2 = maxi(peak_b2, s2.bullets.count)
+		st += 1
+	boss_t = float(st) * GameConfig.FIXED_DT
+	print("")
+	print("B Boss 战 %.1f 秒（满级 build 站桩，即「一次都不躲」的输出下限）" % boss_t)
+	print("   技能 %d 次：冲刺 %d · 环形弹幕 %d · 扇形弹幕 %d · 追踪弹 %d · 危险区 %d · 召唤 %d 波"
+		% [s2.boss_skills, s2.boss_dashes, s2.boss_novas, s2.boss_aimeds,
+			s2.boss_homings, s2.boss_hazards, s2.boss_summons])
+	print("   弹幕 %d 发 · 同屏峰值 %d 发 · %s" % [
+		s2.bullets_fired, peak_b2, "已击杀" if s2.victory else "未在 150 秒内击杀"])
+
+	# ---------------- C. 走位 vs 站桩 ----------------
+	print("")
+	print("C 走位验证（满级 build · 关闭无敌 · 不放刷怪，只留 Boss 一只）")
+	var stand := _duel(false)
+	print("   站桩不动：存活 %.1f 秒 · 末血量 %.0f · 承受伤害 %.0f" % stand)
+	var dodge := _duel(true)
+	print("   %s：存活 %.1f 秒 · 末血量 %.0f · 承受伤害 %.0f" % [
+		"只躲不还手", dodge[0], dodge[1], dodge[2]])
+	var verdict := "PASS：不躲会死、会躲能活 —— 走位是必需的" if stand[0] < 45.0 and dodge[0] >= 45.0 else "需复查"
+	print("   %s" % verdict)
+	print("")
+
+
+## 一场"半真实"的单挑：只有 Boss、没有杂兵，玩家按 dodge 决定动不动。
+## 返回 [存活秒数, 剩余血量, 承受伤害]。玩家不反击（武器仍在自动开火）。
+static func _duel(dodge: bool) -> Array:
+	var sim := Sim.new()
+	sim.setup()
+	sim.spawn_enabled = false
+	for u in UpgradeDefs.UPGRADES:
+		sim.loadout.levels[str(u["id"])] = int(u["max"])
+	sim.loadout.recompute()
+	sim._refresh_max_hp()
+	sim.player_hp = sim.max_hp
+	var bi := EnemyDB.idx_of(EnemyDB.BOSS_ID)
+	var d: Dictionary = EnemyDB.DEFS[bi]
+	sim.enemies.spawn(sim.player_x + 260.0, sim.player_y, d.hp, d.speed, d.radius, bi)
+	sim._update_boss(0.0)
+
+	var limit := int(60.0 / GameConfig.FIXED_DT)
+	for i in limit:
+		var dir := Vector2.ZERO
+		if dodge:
+			dir = _dodge_dir(sim)
+		sim.step(GameConfig.FIXED_DT, dir.x, dir.y)
+		if sim.dead:
+			break
+	return [sim.time, sim.player_hp, sim.damage_taken]
+
+
+## 简化版"会玩"的 AI：躲弹幕、躲危险区，其余时间绕圈。
+##
+## 它不是要做一个好玩家，只是要回答一个是非题：**这套攻击躲得掉吗**。
+## 如果连"看到子弹就往外跑"都能活下来，说明威胁是可读、可操作的；
+## 如果这样都活不下来，那说明数值或弹速过头了，得改设计而不是改 AI。
+static func _dodge_dir(sim) -> Vector2:
+	var ax := 0.0
+	var ay := 0.0
+	var b: EnemyBulletPool = sim.bullets
+	for i in b.count:
+		var dx: float = sim.player_x - b.px[i]
+		var dy: float = sim.player_y - b.py[i]
+		var d2 := dx * dx + dy * dy
+		if d2 > 25000.0 or d2 < 1.0:      # 160px 之外不用管
+			continue
+		var d := sqrt(d2)
+		var w := 1.0 - d / 160.0
+		ax += dx / d * w
+		ay += dy / d * w
+	for h in sim.hazards.hazards:
+		var hx := float(h["x"])
+		var hy := float(h["y"])
+		var dx: float = sim.player_x - hx
+		var dy: float = sim.player_y - hy
+		var d := sqrt(dx * dx + dy * dy)
+		var safe := float(h["r"]) + 46.0
+		if d > safe or d < 1.0:
+			continue
+		# 危险区是"必须离开"的，权重给得比弹幕高
+		ax += dx / d * 2.2
+		ay += dy / d * 2.2
+	# 底噪：一直绕圈。站着不动的 AI 会被杂兵（这里没有）和冲刺逼死，
+	# 而绕圈恰好也是幸存者类最基本的操作。
+	var ang: float = sim.time * 0.85
+	ax += cos(ang) * 0.55
+	ay += sin(ang) * 0.55
+	var l := sqrt(ax * ax + ay * ay)
+	if l < 0.0001:
+		return Vector2(cos(ang), sin(ang))
+	return Vector2(ax / l, ay / l)

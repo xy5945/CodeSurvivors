@@ -1,4 +1,4 @@
-[gd_scene load_steps=14 format=3]
+[gd_scene load_steps=15 format=3]
 
 [ext_resource type="Script" path="res://main.gd" id="1_main"]
 [ext_resource type="Script" path="res://render/enemy_renderer.gd" id="2_er"]
@@ -13,6 +13,7 @@
 [ext_resource type="Script" path="res://render/fx_renderer.gd" id="10_fx"]
 [ext_resource type="Script" path="res://ui/damage_vignette.gd" id="12_vig"]
 [ext_resource type="Script" path="res://render/bolt_renderer.gd" id="13_bolt"]
+[ext_resource type="Script" path="res://render/enemy_bullet_renderer.gd" id="14_eb"]
 
 [node name="Main" type="Node2D"]
 script = ExtResource("1_main")
@@ -31,6 +32,9 @@ script = ExtResource("7_orbit")
 
 [node name="ProjectileRenderer" type="Node2D" parent="."]
 script = ExtResource("9_proj")
+
+[node name="EnemyBulletRenderer" type="Node2D" parent="."]
+script = ExtResource("14_eb")
 
 [node name="FxRenderer" type="Node2D" parent="."]
 script = ExtResource("10_fx")

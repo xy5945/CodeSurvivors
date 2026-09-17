@@ -193,3 +193,51 @@ const BOSS_SUMMON_N := 6
 const BOSS_SUMMON_R_MIN := 50.0
 const BOSS_SUMMON_R_MAX := 95.0
 const BOSS_ENRAGE_HP_FRAC := 0.4    # 血量低于 40% 狂暴：技能间隔 ×0.6
+
+
+# ---- 敌方弹幕与危险区（精英 / Boss 的第二类威胁）----
+# 冲刺是"位移威胁"，弹幕是"空间威胁"：前者只要横向让开，后者封的是一整条路径。
+# 两者叠加之后，Boss 战才真的需要"一边绕圈一边找输出窗口"。
+const MAX_ENEMY_BULLETS := 512
+const BULLET_IFRAME := 0.14         # 弹幕命中后的独立无敌帧（和接触伤害的 0.6s 分开）
+const BULLET_SHARD_RADIUS := 4.5
+const BULLET_HOMING_RADIUS := 6.5
+const BULLET_LIFE := 3.2
+
+# ---- 技能轮盘 ----
+# 不是"每个技能各自一个冷却"而是**轮转**：节奏因此可预期（冲刺 → 弹幕 → 危险区…），
+# 玩家能学会"接下来该防什么"，这比随机放招更公平，也更有"读招"的乐趣。
+const BOSS_SKILLS := ["dash", "nova", "aimed", "hazard", "homing"]
+const ELITE_SKILLS := ["dash", "nova"]
+const SKILL_TURN_RATE := 1.9        # 每帧转向速率（弧度/秒）在蓄力态的表现系数
+
+# 精英技能
+const ELITE_SKILL_CD := 4.6         # 每次技能之间的间隔
+const ELITE_SKILL_RANGE := 560.0    # 玩家在这个距离内才会起手
+const ELITE_NOVA_N := 8             # 环形弹幕：8 发
+const ELITE_NOVA_SPD := 132.0       # 略低于玩家 150 —— 一直直线跑能拉开，但一停下就被追上
+const ELITE_NOVA_DMG := 11.0
+const ELITE_SPLIT_N := 3            # 死亡分裂出的小怪数（"异常扩散"）
+
+# Boss 技能
+const BOSS_SKILL_CD := 4.4
+const BOSS_SKILL_RANGE := 900.0
+const BOSS_ENRAGE_CD_MULT := 0.72   # 狂暴（<40% 血）：技能间隔 ×0.72
+const BOSS_ENRAGE_COUNT_MULT := 1.4 # 狂暴时弹幕数量 ×1.4
+const BOSS_NOVA_N := 18
+const BOSS_NOVA_SPD := 156.0
+const BOSS_NOVA_DMG := 13.0
+const BOSS_AIMED_N := 5
+const BOSS_AIMED_SPREAD := 0.62     # 总张角 ≈ 35°
+const BOSS_AIMED_SPD := 196.0
+const BOSS_AIMED_DMG := 14.0
+const BOSS_HOMING_N := 3
+const BOSS_HOMING_SPD := 118.0
+const BOSS_HOMING_TURN := 1.45      # 弧度/秒的转向上限（不是必中，但会咬住不绕圈的玩家）
+const BOSS_HOMING_DMG := 15.0
+const BOSS_HAZARD_N := 4
+const BOSS_HAZARD_R := 76.0
+const BOSS_HAZARD_WARN := 1.25      # 预警时长：圈亮起来之后有 1.25 秒可以跑出去
+const BOSS_HAZARD_DMG := 42.0
+const BOSS_HAZARD_RING_MIN := 85.0
+const BOSS_HAZARD_RING_MAX := 210.0

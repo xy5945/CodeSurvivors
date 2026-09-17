@@ -97,7 +97,7 @@ const DEFS := [
 		"id": "elite_skull", "name": "精英怪",
 		"tex": "res://assets/sprites/enemies/elite_skull.png",
 		"sheet_frames": 24, "cell_w": 22, "cell_h": 28,
-		"hp": 150.0, "speed": 44.0, "radius": 14.0, "damage": 22.0, "xp": 20,
+		"hp": 350.0, "speed": 44.0, "radius": 14.0, "damage": 26.0, "xp": 20,
 		"color": Color(0.75, 0.95, 0.60),
 		"from_sec": 360.0, "weight": 0, "elite": true,   # 权重 0：不走普通刷怪，走精英定时器
 	},
@@ -105,7 +105,7 @@ const DEFS := [
 		"id": "boss_compiler", "name": "编译器反噬",
 		"tex": "res://assets/sprites/enemies/boss_compiler.png",
 		"sheet_frames": 6, "cell_w": 52, "cell_h": 44,
-		"hp": 18000.0, "speed": 48.0, "radius": 24.0, "damage": 28.0, "xp": 200,
+		"hp": 80000.0, "speed": 48.0, "radius": 24.0, "damage": 34.0, "xp": 200,
 		"color": Color(0.85, 0.22, 0.20),
 		"from_sec": -1.0, "weight": 0, "elite": false, "boss": true,
 		# 18 分钟终局出场（SpawnSystem.BOSS_AT），血量固定不随时间成长：

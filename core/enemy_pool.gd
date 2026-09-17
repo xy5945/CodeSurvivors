@@ -39,6 +39,9 @@ var skill_state := PackedInt32Array()
 var skill_t := PackedFloat32Array()      # 当前状态剩余时间
 var skill_dx := PackedFloat32Array()     # 蓄力结束时锁定的冲刺方向
 var skill_dy := PackedFloat32Array()
+# 技能轮盘指针：0..N-1，指向 BOSS_SKILLS / ELITE_SKILLS 里的第几个技能。
+# 出生随机偏移 —— 同屏 3 只精英如果同步放招，看起来像三头一体的怪物。
+var skill_seq := PackedInt32Array()
 
 var count := 0
 
@@ -59,6 +62,7 @@ func _init(cap: int) -> void:
 	skill_t.resize(cap)
 	skill_dx.resize(cap)
 	skill_dy.resize(cap)
+	skill_seq.resize(cap)
 
 
 func capacity() -> int:
@@ -83,6 +87,7 @@ func spawn(x: float, y: float, hp_v: float, spd_v: float, rad_v: float, type_v: 
 	skill_t[count] = 0.0
 	skill_dx[count] = 0.0
 	skill_dy[count] = 0.0
+	skill_seq[count] = randi() % 8
 	count += 1
 	return true
 
@@ -107,6 +112,7 @@ func kill(i: int) -> void:
 		skill_t[i] = skill_t[last]
 		skill_dx[i] = skill_dx[last]
 		skill_dy[i] = skill_dy[last]
+		skill_seq[i] = skill_seq[last]
 	count -= 1
 
 

@@ -9,6 +9,7 @@ extends Node2D
 @onready var gem_renderer: Node2D = $GemRenderer
 @onready var orbit_renderer: Node2D = $OrbitRenderer
 @onready var projectile_renderer: Node2D = $ProjectileRenderer
+@onready var enemy_bullet_renderer: Node2D = $EnemyBulletRenderer
 @onready var fx_renderer: Node2D = $FxRenderer
 @onready var bolt_renderer: Node2D = $BoltRenderer
 @onready var whip_arc: Node2D = $WhipArc
@@ -80,6 +81,12 @@ func _ready() -> void:
 		get_tree().quit()
 		return
 
+	if OS.get_cmdline_user_args().has("--skilltest"):
+		set_process(false)
+		Bench.run_skill_test()
+		get_tree().quit()
+		return
+
 	if OS.get_cmdline_user_args().has("--bosstest"):
 		set_process(false)
 		Bench.run_boss_test()
@@ -118,6 +125,7 @@ func _ready() -> void:
 	player_view.setup()
 	orbit_renderer.setup()
 	projectile_renderer.setup(GameConfig.MAX_PROJECTILES)
+	enemy_bullet_renderer.setup(GameConfig.MAX_ENEMY_BULLETS)
 	fx_renderer.sim = sim
 	bolt_renderer.sim = sim
 	whip_arc.sim = sim
@@ -241,6 +249,7 @@ func _process(delta: float) -> void:
 	gem_renderer.sync(sim.gems, delta)
 	orbit_renderer.sync(sim.loadout.orbit)
 	projectile_renderer.sync(sim.projectiles)
+	enemy_bullet_renderer.sync(sim.bullets)
 	_sync_player(delta, dir.length_squared() > 0.0)
 	camera.position = Vector2(sim.player_x, sim.player_y)
 	hud.update_stats(delta, sim)
