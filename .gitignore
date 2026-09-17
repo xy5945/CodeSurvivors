@@ -1,0 +1,6 @@
+# Godot 4+ specific ignores
+.godot/
+/android/
+
+# 命令行 headless 运行时在项目根产生的临时目录
+Godot/

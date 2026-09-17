@@ -1,0 +1,258 @@
+extends Node2D
+##
+## 主场景：唯一持有"帧"的地方。
+## 职责只有三件：采样输入 → 驱动仿真 → 把数据同步给表现层。
+## 所有玩法逻辑都在 core/sim.gd 里，这里不放任何规则。
+##
+
+@onready var enemy_renderer: Node2D = $EnemyRenderer
+@onready var gem_renderer: Node2D = $GemRenderer
+@onready var orbit_renderer: Node2D = $OrbitRenderer
+@onready var projectile_renderer: Node2D = $ProjectileRenderer
+@onready var fx_renderer: Node2D = $FxRenderer
+@onready var whip_arc: Node2D = $WhipArc
+@onready var player_view: PlayerView = $PlayerView
+@onready var camera: Camera2D = $Camera2D
+@onready var hud: HUD = $HUD
+@onready var level_up: LevelUpUI = $LevelUpUI
+@onready var vignette: DamageVignette = $DamageVignette
+
+var sim: Sim
+var _acc := 0.0
+# 截图模式：跑够帧数后把真实画面存盘，用于验证渲染朝向这类 headless 测不到的东西。
+# 运行（非 headless）：godot --path . -- --shot
+var _shot_countdown := 0
+# --nolv：禁止升级弹窗弹出。截图模式专用 —— 弹窗会暂停整棵树，--shot 就废了
+var _nolv := false
+
+
+func _ready() -> void:
+	if OS.get_cmdline_user_args().has("--bench"):
+		set_process(false)      # quit() 不会立刻生效，否则 _process 会跑几帧空指针
+		Bench.run()
+		get_tree().quit()
+		return
+
+	if OS.get_cmdline_user_args().has("--wpntest"):
+		set_process(false)
+		WeaponTest.run()
+		get_tree().quit()
+		return
+
+	if OS.get_cmdline_user_args().has("--dpstest"):
+		set_process(false)
+		WeaponTest.run_single()
+		get_tree().quit()
+		return
+
+	for a in OS.get_cmdline_user_args():
+		if a.begins_with("--standtest"):
+			set_process(false)
+			if a == "--standtest=late":
+				Bench.run_stand_late()
+			else:
+				Bench.run_stand()
+			get_tree().quit()
+			return
+
+	if OS.get_cmdline_user_args().has("--survival"):
+		set_process(false)
+		Bench.run_survival(20.0)
+		get_tree().quit()
+		return
+
+	if OS.get_cmdline_user_args().has("--chesttest"):
+		set_process(false)
+		Bench.run_chest_test()
+		get_tree().quit()
+		return
+
+	if OS.get_cmdline_user_args().has("--bosstest"):
+		set_process(false)
+		Bench.run_boss_test()
+		get_tree().quit()
+		return
+
+	# --smoke 可带分钟数：--smoke=20（跑到 18 分钟验证 Boss 自然出场）
+	for a in OS.get_cmdline_user_args():
+		if a.begins_with("--smoke"):
+			set_process(false)
+			Bench.run_smoke(float(a.split("=")[-1]) if "=" in a else 10.0)
+			get_tree().quit()
+			return
+
+	randomize()
+	# 竞技场外是"虚空"：纯近黑，和场内那块通电的深蓝地板形成色阶。
+	# 这一层色差是边界可读性的第一道保险（第二道是 grid_bg 里的霓虹墙）。
+	RenderingServer.set_default_clear_color(Color(0.004, 0.006, 0.013))
+	# 游戏中隐藏光标：它会挡视线、破坏沉浸感。升级弹窗打开时再显示。
+	Input.set_mouse_mode(Input.MOUSE_MODE_HIDDEN)
+
+	sim = Sim.new()
+	sim.setup()
+
+	# --pos=<x>,<y>：把玩家挪到指定坐标再开局，配合 --shot 截特定位置的画面
+	#（例如 --pos=1340,0 截边界墙）。只影响开局位置，不参与正式玩法。
+	for a in OS.get_cmdline_user_args():
+		if a.begins_with("--pos="):
+			var p := a.substr(6).split(",")
+			if p.size() == 2:
+				sim.player_x = clampf(float(p[0]), -GameConfig.ARENA_HALF, GameConfig.ARENA_HALF)
+				sim.player_y = clampf(float(p[1]), -GameConfig.ARENA_HALF, GameConfig.ARENA_HALF)
+
+	enemy_renderer.setup(GameConfig.MAX_ENEMIES)
+	gem_renderer.setup(GameConfig.MAX_GEMS)
+	player_view.setup()
+	orbit_renderer.setup()
+	projectile_renderer.setup(GameConfig.MAX_PROJECTILES)
+	fx_renderer.sim = sim
+	whip_arc.sim = sim
+	level_up.sim = sim
+	level_up.resolved.connect(_on_levelup_resolved)
+
+	camera.position = Vector2(sim.player_x, sim.player_y)
+	_sync_player(0.0, false)
+
+	if OS.get_cmdline_user_args().has("--opening"):
+		set_process(false)
+		Bench.run_opening()
+		get_tree().quit()
+		return
+
+	if OS.get_cmdline_user_args().has("--uitest"):
+		set_process(false)
+		_uitest()
+		get_tree().quit()
+		return
+
+	# --shot 可带帧数：godot --path . -- --shot=10（截开局空场，适合看玩家本身）
+	var shot_arg := ""
+	for a in OS.get_cmdline_user_args():
+		if a.begins_with("--shot"):
+			shot_arg = a
+	if shot_arg != "":
+		_shot_countdown = int(shot_arg.split("=")[-1]) if "=" in shot_arg else 300
+	if OS.get_cmdline_user_args().has("--nolv"):
+		_nolv = true
+		# --give=<升级id>：直接把某项拉满，用来截特定武器/特效的画面
+		for a in OS.get_cmdline_user_args():
+			if a.begins_with("--give="):
+				var gid := a.substr(7)
+				for u in UpgradeDefs.UPGRADES:
+					if str(u["id"]) == gid:
+						sim.loadout.levels[gid] = int(u["max"])
+				sim.loadout.recompute()
+		# --spawn=<敌人id>：在玩家周围摆一圈指定敌人，配合 --shot 验证美术
+		for a in OS.get_cmdline_user_args():
+			if a.begins_with("--spawn="):
+				var ei := EnemyDB.idx_of(a.substr(8))
+				if ei >= 0:
+					var d: Dictionary = EnemyDB.DEFS[ei]
+					for k in 12:
+						var ang := TAU * float(k) / 12.0
+						sim.enemies.spawn(
+							sim.player_x + cos(ang) * 90.0,
+							sim.player_y + sin(ang) * 90.0,
+							d.hp, 0.0, d.radius, ei
+						)
+
+
+##
+## 升级弹窗的无头验证。UI 是最容易出运行时错误的地方（样式 API、枚举名、
+## 字典取值），而它在 headless 下不会被执行到，所以单独开一条测试路径。
+## 运行：godot --headless --path . -- --uitest
+##
+func _uitest() -> void:
+	print("")
+	print("=== 升级弹窗 · 无头测试 ===")
+
+	sim.pending_levelups = 1
+	level_up.open(sim)
+	print("打开后 → 可见 %s · 游戏暂停 %s" % [level_up.visible, get_tree().paused])
+
+	for c in level_up._cards:
+		var card := c as UpgradeCard
+		var levels: Array = card.def["levels"]
+		var desc := str(levels[mini(card.target_level, levels.size()) - 1]["desc"])
+		print("  卡片 [%s] %s  Lv%d  %s" % [
+			card.def["icon"], card.def["name"], card.target_level, desc
+		])
+
+	# 模拟用鼠标点第一张卡
+	level_up._cards[0].picked.emit(level_up._cards[0])
+	print("点第一张 → 剩余升级次数 %d · 暂停 %s · 可见 %s" % [
+		sim.pending_levelups, get_tree().paused, level_up.visible
+	])
+
+	# 连升两级：验证弹窗会连续刷新而不是直接关闭
+	sim.pending_levelups = 2
+	level_up.open(sim)
+	level_up._cards[0].picked.emit(level_up._cards[0])
+	print("连升两级 · 第一次选完 → 剩余 %d · 仍可见 %s" % [
+		sim.pending_levelups, level_up.visible
+	])
+	level_up._cards[0].picked.emit(level_up._cards[0])
+	print("第二次选完 → 剩余 %d · 已关闭 %s" % [
+		sim.pending_levelups, not level_up.visible
+	])
+
+	# 打满所有升级项，验证兜底选项不会出现空卡片
+	for u in UpgradeDefs.UPGRADES:
+		sim.loadout.levels[u["id"]] = int(u["max"])
+	sim.loadout.recompute()
+	var last := sim.loadout.roll_choices(3)
+	print("全满级后抽 3 张 → %s" % [
+		", ".join(last.map(func(c): return str(c["def"]["name"])))
+	])
+	print("")
+
+
+func _process(delta: float) -> void:
+	# Input.get_vector 自带对角线归一化，斜向不会比直线快 1.41 倍。
+	# 参数顺序是 (neg_x, pos_x, neg_y, pos_y) = (left, right, up, down)，写反了方向会全乱。
+	var dir := Input.get_vector("move_left", "move_right", "move_up", "move_down")
+
+	_acc += minf(delta, 0.25)
+	var steps := 0
+	while _acc >= GameConfig.FIXED_DT and steps < GameConfig.MAX_STEPS_PER_FRAME:
+		sim.step(GameConfig.FIXED_DT, dir.x, dir.y)
+		_acc -= GameConfig.FIXED_DT
+		steps += 1
+	if steps >= GameConfig.MAX_STEPS_PER_FRAME:
+		_acc = 0.0      # 追不上就丢弃，避免死亡螺旋
+
+	enemy_renderer.sync(sim.enemies, sim.player_x)
+	gem_renderer.sync(sim.gems, delta)
+	orbit_renderer.sync(sim.loadout.orbit)
+	projectile_renderer.sync(sim.projectiles)
+	_sync_player(delta, dir.length_squared() > 0.0)
+	camera.position = Vector2(sim.player_x, sim.player_y)
+	hud.update_stats(delta, sim)
+	vignette.update_fx(delta, sim)
+
+	# 升级弹窗：放在最后，本帧的仿真已经跑完。
+	# --nolv：截图模式专用。弹窗一开游戏就暂停，--shot 永远等不到目标帧。
+	if not _nolv and not sim.dead and sim.pending_levelups > 0 and not level_up.visible:
+		level_up.open(sim)
+
+	if _shot_countdown > 0:
+		_shot_countdown -= 1
+		if _shot_countdown == 0:
+			var path := "user://shot.png"
+			get_viewport().get_texture().get_image().save_png(path)
+			print("截已保存: " + ProjectSettings.globalize_path(path))
+			get_tree().quit()
+
+
+func _sync_player(dt: float, moving: bool) -> void:
+	var p := Vector2(sim.player_x, sim.player_y)
+	player_view.position = p
+	player_view.update_view(dt, moving, sim.facing_x, sim.iframe)
+	# WhipArc 的 _draw 以本地原点为中心画扇形，必须跟着玩家走。
+	# 忘了这一行的话：开局第一刀可见（玩家还在原点），一移动就再也看不到。
+	whip_arc.position = p
+
+
+## 弹窗关闭后清掉累积时间，否则暂停期间攒下的 delta 会让仿真瞬间连跑好几步
+func _on_levelup_resolved() -> void:
+	_acc = 0.0

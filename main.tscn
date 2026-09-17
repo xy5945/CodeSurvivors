@@ -1,0 +1,55 @@
+[gd_scene load_steps=13 format=3]
+
+[ext_resource type="Script" path="res://main.gd" id="1_main"]
+[ext_resource type="Script" path="res://render/enemy_renderer.gd" id="2_er"]
+[ext_resource type="Script" path="res://render/grid_bg.gd" id="3_grid"]
+[ext_resource type="Script" path="res://render/whip_arc.gd" id="4_arc"]
+[ext_resource type="Script" path="res://ui/hud.gd" id="5_hud"]
+[ext_resource type="Script" path="res://render/gem_renderer.gd" id="6_gem"]
+[ext_resource type="Script" path="res://render/orbit_renderer.gd" id="7_orbit"]
+[ext_resource type="Script" path="res://ui/level_up_ui.gd" id="8_lvup"]
+[ext_resource type="Script" path="res://render/projectile_renderer.gd" id="9_proj"]
+[ext_resource type="Script" path="res://render/player_view.gd" id="11_player"]
+[ext_resource type="Script" path="res://render/fx_renderer.gd" id="10_fx"]
+[ext_resource type="Script" path="res://ui/damage_vignette.gd" id="12_vig"]
+
+[node name="Main" type="Node2D"]
+script = ExtResource("1_main")
+
+[node name="GridBG" type="Node2D" parent="."]
+script = ExtResource("3_grid")
+
+[node name="GemRenderer" type="Node2D" parent="."]
+script = ExtResource("6_gem")
+
+[node name="EnemyRenderer" type="Node2D" parent="."]
+script = ExtResource("2_er")
+
+[node name="OrbitRenderer" type="Node2D" parent="."]
+script = ExtResource("7_orbit")
+
+[node name="ProjectileRenderer" type="Node2D" parent="."]
+script = ExtResource("9_proj")
+
+[node name="FxRenderer" type="Node2D" parent="."]
+script = ExtResource("10_fx")
+
+[node name="WhipArc" type="Node2D" parent="."]
+script = ExtResource("4_arc")
+
+[node name="PlayerView" type="Sprite2D" parent="."]
+script = ExtResource("11_player")
+
+[node name="Camera2D" type="Camera2D" parent="."]
+position_smoothing_enabled = true
+position_smoothing_speed = 10.0
+
+[node name="HUD" type="CanvasLayer" parent="."]
+script = ExtResource("5_hud")
+
+[node name="DamageVignette" type="CanvasLayer" parent="."]
+script = ExtResource("12_vig")
+
+[node name="LevelUpUI" type="CanvasLayer" parent="."]
+script = ExtResource("8_lvup")
+layer = 10
