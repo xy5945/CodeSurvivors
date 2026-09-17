@@ -42,6 +42,7 @@ func update(dt: float, sim) -> void:
 	if cooldown > 0.0:
 		return
 	cooldown = cd_base
+	sim.sfx_events.append("bolt")
 
 	var i := 0
 	while i < bolt_count:

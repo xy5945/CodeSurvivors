@@ -51,6 +51,9 @@ var boss_summons := 0
 var boss_summon_cd := 4.0  # Boss 落地后 4 秒先召第一波
 
 var kills := 0
+# 音效事件队列：仿真层只记录"这一帧发生了什么"，由表现层决定发不发声、怎么发声。
+# 每个 step 开头清空（见 step），headless 自动化测试不消费它也不会无限增长。
+var sfx_events: Array[String] = []
 var gems_collected := 0
 var patches_collected := 0
 var chests_collected := 0
@@ -86,6 +89,7 @@ func step(dt: float, dir_x: float, dir_y: float) -> void:
 	if dead:
 		return
 	time += dt
+	sfx_events.clear()
 
 	_move_player(dt, dir_x, dir_y)
 	if spawn_enabled:
@@ -352,6 +356,7 @@ func _boss_summon_tick(dt: float, boss_idx: int, boss_type: int) -> void:
 	if boss_summon_cd > 0.0:
 		return
 	var enraged: bool = enemies.hp[boss_idx] < EnemyDB.DEFS[boss_type].hp * GameConfig.BOSS_ENRAGE_HP_FRAC
+	sfx_events.append("elite")
 	boss_summon_cd = GameConfig.BOSS_SUMMON_CD * (0.6 if enraged else 1.0)
 
 	var ji := EnemyDB.idx_of("junk_file")

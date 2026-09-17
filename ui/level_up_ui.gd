@@ -112,6 +112,7 @@ func _roll() -> void:
 
 
 func _on_card_picked(card: UpgradeCard) -> void:
+	Sfx.play("ui")
 	if sim == null:
 		return
 

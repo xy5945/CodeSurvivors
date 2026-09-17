@@ -134,9 +134,10 @@ func update_stats(delta: float, sim: Sim) -> void:
 			int(_fps), sim.kills, _fmt_time(sim.time)
 		]
 	else:
-		_info.text = "FPS %d  敌人 %d  击杀 %d  HP %d/%d  %s" % [
+		_info.text = "FPS %d  敌人 %d  击杀 %d  HP %d/%d  %s%s" % [
 			int(_fps), sim.enemies.count, sim.kills,
-			int(sim.player_hp), int(sim.max_hp), _fmt_time(sim.time)
+			int(sim.player_hp), int(sim.max_hp), _fmt_time(sim.time),
+			"  [静音 · M]" if Sfx.is_muted() else ""
 		]
 
 	# Build 摘要每秒刷一次就够
@@ -159,7 +160,7 @@ func _build_text(sim: Sim) -> String:
 		var lv := sim.loadout.level_of(u["id"])
 		if lv > 0:
 			parts.append("%s%d" % [u["icon"], lv])
-	return "  ".join(parts) if parts.size() > 0 else "WASD 移动 · 朝向即攻击方向"
+	return "  ".join(parts) if parts.size() > 0 else "WASD 移动 · 朝向即攻击方向 · M 静音"
 
 
 func _fmt_time(t: float) -> String:

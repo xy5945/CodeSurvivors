@@ -53,6 +53,7 @@ func _update_elite(dt: float, sim) -> void:
 	if ei < 0:
 		return
 	_spawn_one(sim, sim.time, GameConfig.SPAWN_MIN_DIST, GameConfig.SPAWN_MAX_DIST, ei)
+	sim.sfx_events.append("elite")
 
 
 ## Boss：一局只出一只，不受"场上敌人上限"约束（否则会被杂兵挤掉），

@@ -51,6 +51,7 @@ func update(dt: float, sim) -> void:
 	if cooldown > 0.0:
 		return
 	cooldown = cd_base
+	sim.sfx_events.append("shoot")
 	_fire(sim)
 
 

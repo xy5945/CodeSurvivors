@@ -25,6 +25,18 @@ var _shot_countdown := 0
 # --nolv：禁止升级弹窗弹出。截图模式专用 —— 弹窗会暂停整棵树，--shot 就废了
 var _nolv := false
 
+# ---- 音效的状态跟踪 ----
+# 武器开火是"事件队列"（仿真层 push、这里消费），下面这些则是"状态变化"：
+# 仿真层只提供了累计计数和状态位，要发声就得自己比前后帧的差值。
+var _prev_kills := 0
+var _prev_gems := 0
+var _prev_patches := 0
+var _prev_chests := 0
+var _prev_hp := 0.0
+var _was_dead := false
+var _was_victory := false
+var _was_boss := false
+
 
 func _ready() -> void:
 	if OS.get_cmdline_user_args().has("--bench"):
@@ -216,6 +228,8 @@ func _process(delta: float) -> void:
 	var steps := 0
 	while _acc >= GameConfig.FIXED_DT and steps < GameConfig.MAX_STEPS_PER_FRAME:
 		sim.step(GameConfig.FIXED_DT, dir.x, dir.y)
+		# 必须紧跟 step 消费：下一个 step 开头会清空队列
+		_drain_sfx()
 		_acc -= GameConfig.FIXED_DT
 		steps += 1
 	if steps >= GameConfig.MAX_STEPS_PER_FRAME:
@@ -229,11 +243,13 @@ func _process(delta: float) -> void:
 	camera.position = Vector2(sim.player_x, sim.player_y)
 	hud.update_stats(delta, sim)
 	vignette.update_fx(delta, sim)
+	_sync_audio()
 
 	# 升级弹窗：放在最后，本帧的仿真已经跑完。
 	# --nolv：截图模式专用。弹窗一开游戏就暂停，--shot 永远等不到目标帧。
 	if not _nolv and not sim.dead and sim.pending_levelups > 0 and not level_up.visible:
 		level_up.open(sim)
+		Sfx.play("levelup")
 
 	if _shot_countdown > 0:
 		_shot_countdown -= 1
@@ -251,6 +267,50 @@ func _sync_player(dt: float, moving: bool) -> void:
 	# WhipArc 的 _draw 以本地原点为中心画扇形，必须跟着玩家走。
 	# 忘了这一行的话：开局第一刀可见（玩家还在原点），一移动就再也看不到。
 	whip_arc.position = p
+
+
+## 消费仿真层这一帧攒下的音效事件（武器开火、Boss 召唤）。
+## 仿真层只给事件名，这里负责交给 Sfx —— 仿真层永远不碰 AudioServer。
+func _drain_sfx() -> void:
+	for evt in sim.sfx_events:
+		Sfx.play(evt)
+	sim.sfx_events.clear()
+
+
+## 状态变化类音效：靠比前后帧的累计计数和状态位来发现。
+## 一帧杀 40 个敌人也只请求一次 —— 密集触发由 Sfx 内部的节流兜底，
+## 这里每类事件每帧最多一次，免得同一帧堆出几十个播放请求抢声道。
+func _sync_audio() -> void:
+	if sim.kills > _prev_kills:
+		Sfx.play("kill")
+	if sim.gems_collected > _prev_gems:
+		Sfx.play("pickup")
+	if sim.patches_collected > _prev_patches:
+		Sfx.play("heal")
+	if sim.chests_collected > _prev_chests:
+		Sfx.play("chest")
+	if sim.player_hp < _prev_hp - 0.001:
+		Sfx.play("hurt")
+
+	_prev_kills = sim.kills
+	_prev_gems = sim.gems_collected
+	_prev_patches = sim.patches_collected
+	_prev_chests = sim.chests_collected
+	_prev_hp = sim.player_hp
+
+	# 三个一次性事件：只在状态从"没发生"跳到"发生"的那一帧响
+	if sim.boss_active and not _was_boss:
+		Sfx.play("boss")
+		Sfx.set_boss_mode(true)
+	if sim.victory and not _was_victory:
+		Sfx.play("victory")
+	if sim.dead and not _was_dead:
+		Sfx.play("death")
+		Sfx.stop_bgm()
+
+	_was_boss = sim.boss_active
+	_was_victory = sim.victory
+	_was_dead = sim.dead
 
 
 ## 弹窗关闭后清掉累积时间，否则暂停期间攒下的 delta 会让仿真瞬间连跑好几步

@@ -58,6 +58,7 @@ func update(dt: float, sim) -> void:
 	if cooldown > 0.0:
 		return
 	cooldown = cd_base
+	sim.sfx_events.append("whip")
 	swing = SWING_TIME
 	last_hit_count = 0
 

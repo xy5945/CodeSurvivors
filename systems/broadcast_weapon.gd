@@ -42,4 +42,5 @@ func update(dt: float, sim) -> void:
 	if cooldown > 0.0:
 		return
 	cooldown = cd_base
+	sim.sfx_events.append("wave")
 	sim.fx.add_wave(sim.player_x, sim.player_y, max_r, spd, damage, can_back, back_bonus, hit_cap)
