@@ -8,8 +8,6 @@ extends Node2D
 
 const WAVE_COLOR := Color(0.45, 0.85, 1.0, 0.55)
 const WAVE_BACK_COLOR := Color(1.0, 0.85, 0.40, 0.60)
-const BOLT_FILL := Color(0.95, 0.95, 1.0, 0.16)
-const BOLT_EDGE := Color(0.85, 0.90, 1.0, 0.85)
 
 var sim: Sim = null
 
@@ -33,14 +31,4 @@ func _draw() -> void:
 		draw_arc(Vector2(w["x"], w["y"]), r, 0.0, TAU, 40,
 			Color(c.r, c.g, c.b, c.a * fade), 3.0 if not back else 2.0)
 
-	for b in sim.fx.bolts:
-		var life := float(b["life"])
-		var p := clampf(life / 0.5, 0.0, 1.0)
-		var pos := Vector2(b["x"], b["y"])
-		var rad := float(b["r"])
-		draw_circle(pos, rad * (0.4 + p * 0.6), Color(BOLT_FILL.r, BOLT_FILL.g, BOLT_FILL.b, BOLT_FILL.a * p))
-		draw_arc(pos, rad, 0.0, TAU, 24, Color(BOLT_EDGE.r, BOLT_EDGE.g, BOLT_EDGE.b, BOLT_EDGE.a * p), 2.0)
-		# 一道竖直的雷光，让"落雷"看得出来是从天而降
-		var h := rad * 2.4
-		draw_line(pos + Vector2(0, -h), pos + Vector2(0, h * 0.6),
-			Color(0.9, 0.95, 1.0, 0.8 * p), 3.0)
+	# 落雷已改由 BoltRenderer 播放手绘帧序列（assets/fx/bolt/），这里只画波。

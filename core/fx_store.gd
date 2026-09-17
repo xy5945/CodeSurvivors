@@ -36,6 +36,7 @@ func add_bolt(x: float, y: float, r: float, dmg: float, life: float, dps: float,
 	bolts.append({
 		"x": x, "y": y, "r": r, "dmg": dmg, "life": life, "dps": dps,
 		"cap": hit_cap,
+		"life0": life,   # 初始寿命，表现层按 life/life0 换算动画进度
 	})
 
 

@@ -144,7 +144,7 @@ const WAVE_FLASH := 0.10
 
 # ---- 随机数审判 ----
 const JUDGMENT_SCREEN_R := 340.0    # 视口半对角，落雷只落在看得见的地方
-const BOLT_LIFE := 0.22             # 落雷视觉残留时长
+const BOLT_LIFE := 0.55             # 落雷视觉时长 = 动画 16 帧放完（约 29fps）
 
 # ---- 指针追踪的标记 ----
 const MARK_DURATION := 3.0          # 被标记后 3 秒内

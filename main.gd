@@ -10,6 +10,7 @@ extends Node2D
 @onready var orbit_renderer: Node2D = $OrbitRenderer
 @onready var projectile_renderer: Node2D = $ProjectileRenderer
 @onready var fx_renderer: Node2D = $FxRenderer
+@onready var bolt_renderer: Node2D = $BoltRenderer
 @onready var whip_arc: Node2D = $WhipArc
 @onready var player_view: PlayerView = $PlayerView
 @onready var camera: Camera2D = $Camera2D
@@ -118,6 +119,7 @@ func _ready() -> void:
 	orbit_renderer.setup()
 	projectile_renderer.setup(GameConfig.MAX_PROJECTILES)
 	fx_renderer.sim = sim
+	bolt_renderer.sim = sim
 	whip_arc.sim = sim
 	level_up.sim = sim
 	level_up.resolved.connect(_on_levelup_resolved)
