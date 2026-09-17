@@ -73,6 +73,12 @@ var kills := 0
 # 音效事件队列：仿真层只记录"这一帧发生了什么"，由表现层决定发不发声、怎么发声。
 # 每个 step 开头清空（见 step），headless 自动化测试不消费它也不会无限增长。
 var sfx_events: Array[String] = []
+# 知识卡事件队列：和 sfx_events 完全同一套路 —— 仿真层只记"这一帧首次遇到了什么"，
+# 显示、排队、去重全归表现层。同样每个 step 开头清空，headless 不消费也不会涨。
+var card_events: Array[String] = []
+# 已经记过一次的敌人类型（按 EnemyDB.DEFS 下标）。
+# 不记的话每刷一只怪就 push 一次，一秒钟能塞进几十张同内容的卡。
+var seen_enemy_types: Array[bool] = []
 var gems_collected := 0
 var patches_collected := 0
 var chests_collected := 0
@@ -104,6 +110,8 @@ func setup() -> void:
 	_refresh_max_hp()
 	player_hp = max_hp
 	exp_next = UpgradeDefs.exp_to_next(1)
+	seen_enemy_types.resize(EnemyDB.DEFS.size())
+	seen_enemy_types.fill(false)
 	spawn.prewarm(self)
 
 
@@ -112,6 +120,7 @@ func step(dt: float, dir_x: float, dir_y: float) -> void:
 		return
 	time += dt
 	sfx_events.clear()
+	card_events.clear()
 
 	_move_player(dt, dir_x, dir_y)
 	if spawn_enabled:
@@ -208,6 +217,11 @@ func apply_upgrade(id: String) -> void:
 	if pending_levelups > 0:
 		pending_levelups -= 1
 
+	# 首次拿到这把武器/这个被动 → 弹它的知识卡。
+	# 判断放在 apply 之后：此刻 levels[id] 已经是新等级，等于 1 说明是刚拿到的。
+	if loadout.level_of(id) == 1:
+		card_events.append(id)
+
 
 ## 兜底选项"紧急补丁"：不占等级、不进 loadout。
 func apply_heal_pick(amount: float) -> void:
@@ -218,6 +232,20 @@ func apply_heal_pick(amount: float) -> void:
 
 func _refresh_max_hp() -> void:
 	max_hp = GameConfig.PLAYER_MAX_HP + loadout.max_hp_bonus
+
+
+## 记一张"首次遇到这种敌人"的知识卡。
+##
+## 三个刷怪入口都必须调（常规刷怪 / 精英死亡分裂 / Boss 召唤），
+## 漏一个的话那种敌人永远弹不出卡 —— 而它恰好可能是唯一一次出现（比如 Boss）。
+## 重复调用是安全的：seen_enemy_types 会挡住。
+func _note_enemy_type(ti: int) -> void:
+	if ti < 0 or ti >= seen_enemy_types.size():
+		return
+	if seen_enemy_types[ti]:
+		return
+	seen_enemy_types[ti] = true
+	card_events.append(str(EnemyDB.DEFS[ti]["id"]))
 
 
 # ---------------------------------------------------------------- 敌人
@@ -535,6 +563,7 @@ func _boss_summon_tick(dt: float, boss_idx: int, boss_type: int) -> void:
 				d.hp * growth, d.speed, d.radius, ji):
 			n += 1
 	boss_summons += 1
+	_note_enemy_type(ji)
 
 
 ## 倒序回收：配合 swap_remove，被搬过来的元素本帧不再检查（延迟一帧，无影响）
@@ -597,6 +626,7 @@ func _split_elite(x: float, y: float) -> void:
 		enemies.spawn(x + cos(ang) * 16.0, y + sin(ang) * 16.0,
 			d.hp * growth, d.speed, d.radius, bi)
 	elite_splits += 1
+	_note_enemy_type(bi)
 
 
 ## 掉落回血物（补丁包 / 宝箱）。

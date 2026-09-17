@@ -95,4 +95,5 @@ func _spawn_one(sim, t: float, d_min: float = GameConfig.SPAWN_MIN_DIST,
 	# Boss 例外：fixed_hp > 0 时用固定值。
 	var hp: float = fixed_hp if fixed_hp > 0.0 else d.hp * (1.0 + t * GameConfig.ENEMY_HP_GROWTH)
 
-	e.spawn(x, y, hp, spd, d.radius, type_i)
+	if e.spawn(x, y, hp, spd, d.radius, type_i):
+		sim._note_enemy_type(type_i)

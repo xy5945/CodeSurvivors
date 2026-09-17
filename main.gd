@@ -17,6 +17,7 @@ extends Node2D
 @onready var camera: Camera2D = $Camera2D
 @onready var hud: HUD = $HUD
 @onready var level_up: LevelUpUI = $LevelUpUI
+@onready var knowledge: KnowledgeUI = $KnowledgeUI
 @onready var vignette: DamageVignette = $DamageVignette
 
 var sim: Sim
@@ -135,9 +136,23 @@ func _ready() -> void:
 	camera.position = Vector2(sim.player_x, sim.player_y)
 	_sync_player(0.0, false)
 
+	# 开局先送两张：起始武器（分支长鞭 → if 分支）和"变量"（经验宝石）。
+	# 它们是整局教学的第一课，也是玩家唯一一次"没做任何事就看到"的卡。
+	# 起始武器不硬编码 whip —— 以后加了角色系统、起始武器换了，这里自动跟着变。
+	for id in sim.loadout.levels:
+		if sim.loadout.level_of(id) > 0:
+			knowledge.push(id)
+	knowledge.push("gem")
+
 	if OS.get_cmdline_user_args().has("--opening"):
 		set_process(false)
 		Bench.run_opening()
+		get_tree().quit()
+		return
+
+	if OS.get_cmdline_user_args().has("--cardtest"):
+		set_process(false)
+		_cardtest()
 		get_tree().quit()
 		return
 
@@ -229,6 +244,111 @@ func _uitest() -> void:
 	print("")
 
 
+##
+## 知识卡无头测试。运行：godot --headless --path . -- --cardtest
+##
+## 查五件事，任何一项挂掉都算没做完：
+##   A 完整性 —— 每把武器/被动、每种敌人都配了卡。忘了配 = 这块内容永远不教学
+##   B 长度   —— 超长文案会撑爆 250x130 的卡片排版（这个尺寸是算过的）
+##   C 引号   —— 文案里出现 ASCII 双引号，将来导出 markdown 会错位
+##   D 去重   —— 同一张卡反复触发只弹一次
+##   E 队列   —— 连着触发多张时逐张播放，不叠成一摞、也不丢
+##
+func _cardtest() -> void:
+	print("")
+	print("=== 知识卡 · 无头测试 ===")
+	print("卡片总数 %d" % KnowledgeDB.total())
+
+	# ---- A 完整性 ----
+	var missing := KnowledgeDB.missing_cards()
+	if missing.size() > 0:
+		print("  [A 缺卡] %s" % ", ".join(missing))
+	else:
+		print("  A 完整性 OK · %d 升级项 + %d 敌人 全部配了卡" % [
+			UpgradeDefs.UPGRADES.size(), EnemyDB.DEFS.size()
+		])
+
+	# ---- B / C 逐张检查文案 ----
+	var long_plain := 0
+	var long_use := 0
+	var bad_quote := 0
+	for c in KnowledgeDB.CARDS:
+		if str(c["plain"]).length() > 20:
+			long_plain += 1
+			print("    [B 过长] %s · plain %d 字" % [c["term"], str(c["plain"]).length()])
+		if str(c["use"]).length() > 24:
+			long_use += 1
+			print("    [B 过长] %s · use %d 字" % [c["term"], str(c["use"]).length()])
+		for k in ["term", "code", "plain", "use"]:
+			if str(c[k]).contains("\""):
+				bad_quote += 1
+				print("    [C 引号] %s · %s 含 ASCII 双引号" % [c["term"], k])
+	if long_plain + long_use == 0:
+		print("  B 长度 OK · 全部在卡片容量内")
+	if bad_quote == 0:
+		print("  C 引号 OK · 无 ASCII 双引号")
+
+	# ---- D 去重 ----
+	knowledge.debug_reset()
+	knowledge.push("whip")
+	knowledge.push("whip")
+	knowledge.push("whip")
+	var dup: int = knowledge.debug_snapshot()["unlocked"]
+	print("  D 去重 %s · 同一张 push 3 次 → 解锁 %d 张" % [
+		"OK" if dup == 1 else "FAIL", dup
+	])
+
+	# ---- E 队列与停留时长 ----
+	knowledge.debug_reset()
+	for id in ["whip", "orbit", "gem", "virus", "boss_compiler"]:
+		knowledge.push(id)
+	var last := ""
+	var t := 0.0
+	var t_show := 0.0
+	var lines: Array[String] = []
+	for _f in 60 * 60:
+		knowledge.update(1.0 / 60.0)
+		t += 1.0 / 60.0
+		var cur: String = str(knowledge.debug_snapshot()["cur"])
+		if cur == last:
+			continue
+		if last != "":
+			lines.append("      %-14s 显示 %.1f 秒" % [last, t - t_show])
+		if cur == "":
+			break
+		t_show = t
+		last = cur
+	print("  E 队列 · 连开 5 张（首张延迟 1.2 秒，让玩家先动起来）：")
+	for l in lines:
+		print(l)
+
+	# ---- F 图鉴：开/关与暂停状态 ----
+	knowledge.debug_reset()
+	for id in ["whip", "gem", "error_red"]:
+		knowledge.push(id)
+	knowledge._open_codex()
+	var f1: bool = get_tree().paused and knowledge._codex.visible
+	knowledge._page = 1
+	knowledge._refresh_codex()
+	knowledge._close_codex()
+	var f2: bool = not get_tree().paused and not knowledge._codex.visible
+	print("  F 图鉴 %s · 打开暂停=%s 关闭恢复=%s" % [
+		"OK" if f1 and f2 else "FAIL", f1, f2
+	])
+
+	# ---- 导出（这套文案要能直接拿去做课件，所以落到工作区根目录而不是 user://）----
+	var out := "res://../知识卡-课件表.md"
+	var f := FileAccess.open(out, FileAccess.WRITE)
+	if f == null:
+		out = "user://knowledge_cards.md"      # 上一条被拒时（导出后的包里）退回用户目录
+		f = FileAccess.open(out, FileAccess.WRITE)
+	if f != null:
+		f.store_string(KnowledgeDB.to_markdown())
+		f.close()
+		print("  已导出课件表: " + ProjectSettings.globalize_path(out))
+	print("")
+
+
 func _process(delta: float) -> void:
 	# Input.get_vector 自带对角线归一化，斜向不会比直线快 1.41 倍。
 	# 参数顺序是 (neg_x, pos_x, neg_y, pos_y) = (left, right, up, down)，写反了方向会全乱。
@@ -240,6 +360,7 @@ func _process(delta: float) -> void:
 		sim.step(GameConfig.FIXED_DT, dir.x, dir.y)
 		# 必须紧跟 step 消费：下一个 step 开头会清空队列
 		_drain_sfx()
+		_drain_cards()
 		_acc -= GameConfig.FIXED_DT
 		steps += 1
 	if steps >= GameConfig.MAX_STEPS_PER_FRAME:
@@ -254,6 +375,7 @@ func _process(delta: float) -> void:
 	camera.position = Vector2(sim.player_x, sim.player_y)
 	hud.update_stats(delta, sim)
 	vignette.update_fx(delta, sim)
+	knowledge.update(delta)
 	_sync_audio()
 
 	# 升级弹窗：放在最后，本帧的仿真已经跑完。
@@ -288,6 +410,12 @@ func _drain_sfx() -> void:
 	sim.sfx_events.clear()
 
 
+## 知识卡事件：仿真层只说"这一帧首次遇到了什么"，排队和显示交给 KnowledgeUI。
+func _drain_cards() -> void:
+	for id in sim.card_events:
+		knowledge.push(id)
+
+
 ## 状态变化类音效：靠比前后帧的累计计数和状态位来发现。
 ## 一帧杀 40 个敌人也只请求一次 —— 密集触发由 Sfx 内部的节流兜底，
 ## 这里每类事件每帧最多一次，免得同一帧堆出几十个播放请求抢声道。
@@ -298,8 +426,10 @@ func _sync_audio() -> void:
 		Sfx.play("pickup")
 	if sim.patches_collected > _prev_patches:
 		Sfx.play("heal")
+		knowledge.push("patch")
 	if sim.chests_collected > _prev_chests:
 		Sfx.play("chest")
+		knowledge.push("chest")
 	if sim.player_hp < _prev_hp - 0.001:
 		Sfx.play("hurt")
 

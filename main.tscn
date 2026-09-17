@@ -1,4 +1,4 @@
-[gd_scene load_steps=15 format=3]
+[gd_scene load_steps=16 format=3]
 
 [ext_resource type="Script" path="res://main.gd" id="1_main"]
 [ext_resource type="Script" path="res://render/enemy_renderer.gd" id="2_er"]
@@ -14,6 +14,7 @@
 [ext_resource type="Script" path="res://ui/damage_vignette.gd" id="12_vig"]
 [ext_resource type="Script" path="res://render/bolt_renderer.gd" id="13_bolt"]
 [ext_resource type="Script" path="res://render/enemy_bullet_renderer.gd" id="14_eb"]
+[ext_resource type="Script" path="res://ui/knowledge_ui.gd" id="15_kb"]
 
 [node name="Main" type="Node2D"]
 script = ExtResource("1_main")
@@ -57,6 +58,10 @@ script = ExtResource("5_hud")
 
 [node name="DamageVignette" type="CanvasLayer" parent="."]
 script = ExtResource("12_vig")
+
+[node name="KnowledgeUI" type="CanvasLayer" parent="."]
+script = ExtResource("15_kb")
+layer = 6
 
 [node name="LevelUpUI" type="CanvasLayer" parent="."]
 script = ExtResource("8_lvup")
