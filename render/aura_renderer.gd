@@ -15,7 +15,7 @@ extends Node2D
 ##   垃圾回收            —— 圆环 + 碎块被"吸"回中心（回收）
 ##   断点调试（冻结）    —— 六边形冰晶 + 放射线
 ##   全量重编译爆发      —— 方形环 + 四角方块向外
-##   缓冲区爆发（溢出）  —— 圆环 + 方块向外喷出
+##   缓冲区爆发（溢出）  —— 手绘 16 帧能量球序列（亮起→撕裂→消散）
 ##
 ## 全部代码绘制（draw_arc / draw_polyline），和波/落雷/鞭子一样：
 ## 这几个对象数量是个位数，为它们维护 MultiMesh 不划算。
@@ -38,6 +38,31 @@ const C_BUFFER_AURA := Color(1.0, 0.35, 0.75, 0.22)
 # 蓄力环画在玩家身周固定半径，不按爆炸半径画 ——
 # 满级爆炸半径 320，照实画会占掉大半个屏幕，那就不是"读秒"而是"糊屏"
 const CHARGE_R := 62.0
+
+# 缓冲区爆发：16 帧序列（assets/fx/buffer_burst/burst_01..16.png，400x400）。
+# 手绘能量球：亮起 → 撕裂 → 消散，末帧全透明。内容以画布中心对称，
+# 峰值球径约 260px（帧 13~16 实测包围盒），缩放按球径贴齐伤害圈。
+const BURST_SIZE := 400.0
+const BURST_SCALE_PER_R := 1.0 / 130.0   # 纹理缩放 = 爆发半径 r * SCALE_PER_R
+
+const BURST_FRAMES: Array[Texture2D] = [
+	preload("res://assets/fx/buffer_burst/burst_01.png"),
+	preload("res://assets/fx/buffer_burst/burst_02.png"),
+	preload("res://assets/fx/buffer_burst/burst_03.png"),
+	preload("res://assets/fx/buffer_burst/burst_04.png"),
+	preload("res://assets/fx/buffer_burst/burst_05.png"),
+	preload("res://assets/fx/buffer_burst/burst_06.png"),
+	preload("res://assets/fx/buffer_burst/burst_07.png"),
+	preload("res://assets/fx/buffer_burst/burst_08.png"),
+	preload("res://assets/fx/buffer_burst/burst_09.png"),
+	preload("res://assets/fx/buffer_burst/burst_10.png"),
+	preload("res://assets/fx/buffer_burst/burst_11.png"),
+	preload("res://assets/fx/buffer_burst/burst_12.png"),
+	preload("res://assets/fx/buffer_burst/burst_13.png"),
+	preload("res://assets/fx/buffer_burst/burst_14.png"),
+	preload("res://assets/fx/buffer_burst/burst_15.png"),
+	preload("res://assets/fx/buffer_burst/burst_16.png"),
+]
 
 var sim: Sim = null
 
@@ -138,8 +163,8 @@ func _draw_pulses() -> void:
 				_pulse_freeze(pos, r, t, col)
 			2:
 				_pulse_rebuild(pos, r, t, col)
-			_:
-				_pulse_buffer(pos, r, t, col)
+			3:
+				_pulse_buffer_frames(pos, float(p["r1"]), t)
 
 
 ## 垃圾回收：碎块被"吸"回中心 —— 回收的方向感就是往里收。
@@ -177,16 +202,14 @@ func _pulse_rebuild(c: Vector2, r: float, t: float, col: Color) -> void:
 		k += 1
 
 
-## 缓冲区溢出：方块向外喷出 —— "装不下了漫出来"。
-func _pulse_buffer(c: Vector2, r: float, t: float, col: Color) -> void:
-	draw_arc(c, r, 0.0, TAU, 40, col, 2.5)
-	var k := 0
-	while k < 8:
-		var a := TAU * float(k) / 8.0 + t * 1.8
-		var rr := r + 4.0 + 30.0 * t
-		_square(c + Vector2(cos(a), sin(a)) * rr, lerpf(4.5, 2.0, t), a,
-			Color(col.r, col.g, col.b, col.a * 0.85))
-		k += 1
+## 缓冲区溢出：手绘 16 帧能量球序列（亮起 → 撕裂 → 消散）。
+## 帧本身自带起承转合，这里只负责按进度取帧、把球径对齐伤害圈。
+func _pulse_buffer_frames(c: Vector2, r1: float, t: float) -> void:
+	var idx := mini(int(t * BURST_FRAMES.size()), BURST_FRAMES.size() - 1)
+	var tex := BURST_FRAMES[idx]
+	var sc: float = r1 * BURST_SCALE_PER_R
+	draw_texture_rect(tex, Rect2(c - Vector2(BURST_SIZE, BURST_SIZE) * 0.5 * sc,
+		Vector2(BURST_SIZE, BURST_SIZE) * sc), false)
 
 
 func _pulse_color(kind: int) -> Color:

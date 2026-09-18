@@ -82,7 +82,9 @@ func _burst(sim) -> void:
 		_idle = 0.0
 		hits += 1
 
-	sim.fx.add_pulse(cx, cy, radius * 0.35, radius, 0.28, 3, false)
+	# 寿命 0.5s：16 帧序列按 32fps 播完。只影响表现（pulse 无伤害逻辑），
+	# 但太短的话帧序列会糊成一闪而过，看不清"亮起→撕裂→消散"的过程。
+	sim.fx.add_pulse(cx, cy, radius * 0.35, radius, 0.5, 3, false)
 	sim.sfx_events.append("wave")
 
 
