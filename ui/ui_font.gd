@@ -22,6 +22,32 @@ static func cjk() -> Font:
 	return _cache
 
 
+## 统一风格的按钮。标题/选人/说明/暂停四处都要用，各写一遍的话
+## 四处的 hover 色、圆角、字号迟早会飘 —— 集中在这一处改。
+static func make_button(text: String, size: int = 12,
+		color: Color = Color(0.88, 0.93, 1.0, 1.0)) -> Button:
+	var b := Button.new()
+	b.text = text
+	apply(b, size, color)
+	b.add_theme_color_override("font_hover_color", Color(1.0, 0.90, 0.55, 1.0))
+	b.add_theme_color_override("font_pressed_color", Color(1.0, 0.90, 0.55, 1.0))
+	b.add_theme_stylebox_override("normal", _btn_box(Color(0.10, 0.13, 0.20, 0.96), Color(0.32, 0.40, 0.55, 1.0)))
+	b.add_theme_stylebox_override("hover", _btn_box(Color(0.18, 0.24, 0.36, 0.98), Color(1.0, 0.86, 0.42, 1.0)))
+	b.add_theme_stylebox_override("pressed", _btn_box(Color(0.26, 0.32, 0.46, 0.98), Color(1.0, 0.86, 0.42, 1.0)))
+	# 不做 focus 样式的话，点过一次按钮后 Godot 会留一圈默认焦点框，很碍眼
+	b.add_theme_stylebox_override("focus", _btn_box(Color(0.10, 0.13, 0.20, 0.96), Color(0.32, 0.40, 0.55, 1.0)))
+	return b
+
+
+static func _btn_box(bg: Color, border: Color) -> StyleBoxFlat:
+	var sb := StyleBoxFlat.new()
+	sb.bg_color = bg
+	sb.border_color = border
+	sb.set_border_width_all(1)
+	sb.set_corner_radius_all(3)
+	return sb
+
+
 ## 给任意 Control 套上中文字体 + 描边风格。暗底 UI 上不加阴影会糊成一团。
 static func apply(ctrl: Control, size: int, color: Color) -> void:
 	ctrl.add_theme_font_override("font", cjk())

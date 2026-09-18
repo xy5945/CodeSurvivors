@@ -17,7 +17,7 @@ extends RefCounted
 const T_LEARN := 0    # 实习生：每 10 级额外获得一次三选一
 const T_RECUR := 1    # 算法工程师：每击杀 60 个，全部武器冷却立刻清零
 const T_MODULE := 2   # 架构师：每持有一把武器，伤害 +5%
-const T_CRON := 3     # 运维工程师：每 25 秒自动回一次血
+const T_CRON := 3     # 全栈工程师：每 25 秒自动回一次血
 const T_BREAK := 4    # 测试工程师：受击后的无敌帧翻倍
 
 # ---- 特性参数（改这里，不要散落到逻辑里）----
@@ -43,6 +43,17 @@ const CHARACTERS: Array = [
 		"color": Color(0.62, 0.86, 1.0),
 	},
 	{
+		"id": "qa", "name": "测试工程师", "term": "断言", "code": "assert()",
+		"plain": "先声明「这里必须对」，错了就停下来查",
+		"start": "breakpoint",
+		"trait": T_BREAK,
+		"trait_name": "断点暂停",
+		"trait_desc": "受伤后的无敌时间翻倍，可以从容脱离",
+		"hp_mult": 1.05, "speed_mult": 1.08, "dmg_mult": 1.0,
+		"cd_mult": 0.94, "pickup_mult": 1.0,
+		"color": Color(0.72, 0.72, 1.0),
+	},
+	{
 		"id": "algo", "name": "算法工程师", "term": "递归", "code": "f(f(x))",
 		"plain": "自己调用自己，一层层算到底",
 		"start": "blade",
@@ -54,6 +65,17 @@ const CHARACTERS: Array = [
 		"color": Color(0.72, 1.0, 0.72),
 	},
 	{
+		"id": "ops", "name": "全栈工程师", "term": "堆栈", "code": "stack",
+		"plain": "后进先出 —— 最上面那层先处理，上下每一层都得管",
+		"start": "forever",
+		"trait": T_CRON,
+		"trait_name": "全栈兜底",
+		"trait_desc": "每 25 秒自动回复 6% 生命上限",
+		"hp_mult": 1.25, "speed_mult": 0.94, "dmg_mult": 0.95,
+		"cd_mult": 1.0, "pickup_mult": 1.0,
+		"color": Color(1.0, 0.62, 0.72),
+	},
+	{
 		"id": "arch", "name": "架构师", "term": "模块化", "code": "import",
 		"plain": "拆成一个个模块，拼起来用",
 		"start": "orbit",
@@ -63,28 +85,6 @@ const CHARACTERS: Array = [
 		"hp_mult": 1.0, "speed_mult": 0.96, "dmg_mult": 1.0,
 		"cd_mult": 1.0, "pickup_mult": 1.4,
 		"color": Color(1.0, 0.85, 0.55),
-	},
-	{
-		"id": "ops", "name": "运维工程师", "term": "定时任务", "code": "cron",
-		"plain": "到点就自动干活，不用人盯着",
-		"start": "forever",
-		"trait": T_CRON,
-		"trait_name": "定时自愈",
-		"trait_desc": "每 25 秒自动回复 6% 生命上限",
-		"hp_mult": 1.25, "speed_mult": 0.94, "dmg_mult": 0.95,
-		"cd_mult": 1.0, "pickup_mult": 1.0,
-		"color": Color(1.0, 0.62, 0.72),
-	},
-	{
-		"id": "qa", "name": "测试工程师", "term": "断言", "code": "assert()",
-		"plain": "先声明「这里必须对」，错了就停下来查",
-		"start": "breakpoint",
-		"trait": T_BREAK,
-		"trait_name": "断点暂停",
-		"trait_desc": "受伤后的无敌时间翻倍，可以从容脱离",
-		"hp_mult": 1.05, "speed_mult": 1.08, "dmg_mult": 1.0,
-		"cd_mult": 0.94, "pickup_mult": 1.0,
-		"color": Color(0.72, 0.72, 1.0),
 	},
 ]
 

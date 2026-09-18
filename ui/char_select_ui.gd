@@ -15,6 +15,7 @@ extends CanvasLayer
 ##
 
 signal selected(char_id: String)
+signal back_requested
 
 const CARD_W := 118.0
 const CARD_H := 206.0
@@ -86,7 +87,7 @@ func _build() -> void:
 	root.add_child(title)
 
 	var sub := Label.new()
-	sub.text = "鼠标点击卡片 · 数字键 1~5 快速选择 · Enter 开始"
+	sub.text = "鼠标点击卡片 · 数字键 1~5 快速选择 · Enter 开始 · ESC 返回"
 	UiFont.apply(sub, 10, C_DIM)
 	sub.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	sub.position = Vector2(0.0, 50.0)
@@ -113,16 +114,23 @@ func _build() -> void:
 	_detail = Label.new()
 	UiFont.apply(_detail, 11, C_NAME)
 	_detail.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	_detail.position = Vector2(60.0, CARD_TOP + CARD_H + 14.0)
-	_detail.size = Vector2(520.0, 30.0)
+	_detail.position = Vector2(60.0, CARD_TOP + CARD_H + 12.0)
+	_detail.size = Vector2(440.0, 30.0)
 	root.add_child(_detail)
 
 	_attr = Label.new()
 	UiFont.apply(_attr, 10, C_DIM)
 	_attr.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	_attr.position = Vector2(60.0, CARD_TOP + CARD_H + 44.0)
-	_attr.size = Vector2(520.0, 16.0)
+	_attr.position = Vector2(60.0, CARD_TOP + CARD_H + 42.0)
+	_attr.size = Vector2(440.0, 16.0)
 	root.add_child(_attr)
+
+	# 返回上一页（标题）。按钮放在详情条右侧，不然 360 高的视口塞不下第二行。
+	var back := UiFont.make_button("← 返回", 11)
+	back.position = Vector2(524.0, CARD_TOP + CARD_H + 26.0)
+	back.size = Vector2(96.0, 30.0)
+	back.pressed.connect(func() -> void: _back())
+	root.add_child(back)
 
 
 func _fill_card(p: Panel, d: Dictionary) -> void:
@@ -247,6 +255,16 @@ func _confirm() -> void:
 	selected.emit(last_id)
 
 
+## 返回标题页。注意**不恢复暂停** —— 标题页自己也是暂停的，
+## 由 main 决定接下来打开谁。
+func _back() -> void:
+	if not _is_open:
+		return
+	_is_open = false
+	hide()
+	back_requested.emit()
+
+
 func _input(event: InputEvent) -> void:
 	if not _is_open:
 		return
@@ -266,4 +284,7 @@ func _input(event: InputEvent) -> void:
 			get_viewport().set_input_as_handled()
 		elif k == KEY_ENTER or k == KEY_SPACE:
 			_confirm()
+			get_viewport().set_input_as_handled()
+		elif k == KEY_ESCAPE:
+			_back()
 			get_viewport().set_input_as_handled()

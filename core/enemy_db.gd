@@ -26,6 +26,7 @@ const DEFS := [
 		"sheet_frames": 24, "cell_w": 16, "cell_h": 14,
 		"hp": 10.0, "speed": 55.0, "radius": 7.0, "damage": 9.0, "xp": 1,
 		"color": Color(0.85, 0.28, 0.25),
+		"desc": "最常见的报错，血薄量大，开局就成片涌过来",
 		"from_sec": 0.0, "weight": 10, "elite": false,
 	},
 	{
@@ -34,6 +35,7 @@ const DEFS := [
 		"sheet_frames": 8, "cell_w": 14, "cell_h": 14,
 		"hp": 8.0, "speed": 66.0, "radius": 6.0, "damage": 7.0, "xp": 1,
 		"color": Color(0.95, 0.75, 0.30),
+		"desc": "跑得比玩家快，专往身前挡路，逼你改方向",
 		"from_sec": 0.0, "weight": 6, "elite": false,
 	},
 	{
@@ -42,6 +44,7 @@ const DEFS := [
 		"sheet_frames": 6, "cell_w": 14, "cell_h": 16,
 		"hp": 22.0, "speed": 40.0, "radius": 8.0, "damage": 9.0, "xp": 2,
 		"color": Color(0.55, 0.50, 0.42),
+		"desc": "血偏厚、走得慢，堆积起来把路堵死",
 		"from_sec": 45.0, "weight": 6, "elite": false,
 	},
 	{
@@ -50,6 +53,7 @@ const DEFS := [
 		"sheet_frames": 1, "cell_w": 10, "cell_h": 14,
 		"hp": 16.0, "speed": 55.0, "radius": 7.0, "damage": 11.0, "xp": 2,
 		"color": Color(0.72, 0.48, 0.30),
+		"desc": "伪装成正常文件，撞上来的伤害比同体型更高",
 		"from_sec": 120.0, "weight": 5, "elite": false,
 	},
 	{
@@ -58,6 +62,7 @@ const DEFS := [
 		"sheet_frames": 8, "cell_w": 20, "cell_h": 18,
 		"hp": 12.0, "speed": 76.0, "radius": 7.0, "damage": 9.0, "xp": 2,
 		"color": Color(0.66, 0.42, 0.88),
+		"desc": "速度最快的杂兵，成群结队地扑，靠数量淹没你",
 		"from_sec": 180.0, "weight": 5, "elite": false,
 	},
 	{
@@ -66,6 +71,7 @@ const DEFS := [
 		"sheet_frames": 3, "cell_w": 26, "cell_h": 14,
 		"hp": 14.0, "speed": 70.0, "radius": 7.0, "damage": 10.0, "xp": 2,
 		"color": Color(0.36, 0.80, 0.78),
+		"desc": "走得飘忽、横向乱窜，最难预判的一种",
 		"from_sec": 240.0, "weight": 4, "elite": false,
 	},
 	{
@@ -75,6 +81,7 @@ const DEFS := [
 		"sheet_frames": 6, "cell_w": 14, "cell_h": 16,
 		"hp": 40.0, "speed": 34.0, "radius": 10.0, "damage": 13.0, "xp": 3,
 		"color": Color(0.92, 0.56, 0.20),
+		"desc": "血厚耐打，被它缠上很难甩开",
 		"from_sec": 300.0, "weight": 3, "elite": false,
 	},
 	{
@@ -83,6 +90,7 @@ const DEFS := [
 		"sheet_frames": 6, "cell_w": 10, "cell_h": 16,
 		"hp": 28.0, "speed": 48.0, "radius": 9.0, "damage": 16.0, "xp": 3,
 		"color": Color(0.36, 0.55, 0.95),
+		"desc": "接触伤害最高的杂兵，蹭一下就很疼",
 		"from_sec": 360.0, "weight": 3, "elite": false,
 	},
 	{
@@ -91,6 +99,7 @@ const DEFS := [
 		"sheet_frames": 8, "cell_w": 16, "cell_h": 20,
 		"hp": 55.0, "speed": 32.0, "radius": 11.0, "damage": 18.0, "xp": 4,
 		"color": Color(0.60, 0.66, 0.76),
+		"desc": "8 分钟后出场的重型 Bug，血最厚，适合单体武器点名",
 		"from_sec": 480.0, "weight": 2, "elite": false,
 	},
 	{
@@ -99,6 +108,7 @@ const DEFS := [
 		"sheet_frames": 24, "cell_w": 22, "cell_h": 28,
 		"hp": 350.0, "speed": 44.0, "radius": 14.0, "damage": 26.0, "xp": 20,
 		"color": Color(0.75, 0.95, 0.60),
+		"desc": "6 分钟起每 40 秒出场一只，会冲刺和环形弹幕，死亡分裂出小怪，必掉宝箱",
 		"from_sec": 360.0, "weight": 0, "elite": true,   # 权重 0：不走普通刷怪，走精英定时器
 		"cc_res": 0.5,      # 控制抗性：冻结时长 ×0.5（精英能被控住，但控不久）
 	},
@@ -108,6 +118,7 @@ const DEFS := [
 		"sheet_frames": 6, "cell_w": 52, "cell_h": 44,
 		"hp": 80000.0, "speed": 48.0, "radius": 24.0, "damage": 34.0, "xp": 200,
 		"color": Color(0.85, 0.22, 0.20),
+		"desc": "18 分钟终局 Boss：冲刺、环形/扇形/追踪弹幕、地面危险区五技能轮转，还会召唤小怪",
 		"from_sec": -1.0, "weight": 0, "elite": false, "boss": true,
 		# 控制抗性：冻结时长只有 18%。Boss 战的核心是「躲技能」，
 		# 满级断点调试（3.2 秒冷却 / 1.8 秒冻结）原本能把它从出场锁到死 ——

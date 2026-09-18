@@ -22,6 +22,8 @@ extends Node2D
 @onready var result: ResultUI = $ResultUI
 @onready var char_select: CharSelectUI = $CharSelectUI
 @onready var title: TitleUI = $TitleUI
+@onready var pause: PauseUI = $PauseUI
+@onready var help: HelpUI = $HelpUI
 @onready var vignette: DamageVignette = $DamageVignette
 
 var sim: Sim
@@ -157,7 +159,13 @@ func _ready() -> void:
 	result.restart_requested.connect(_on_restart)
 	result.quit_requested.connect(_on_quit)
 	char_select.selected.connect(_on_char_selected)
+	char_select.back_requested.connect(_on_char_back)
 	title.start_requested.connect(_on_title_start)
+	title.help_requested.connect(_on_title_help)
+	pause.resume_requested.connect(_on_pause_resume)
+	pause.help_requested.connect(_on_pause_help)
+	pause.quit_requested.connect(_on_pause_quit)
+	help.back_requested.connect(_on_help_back)
 
 	camera.position = Vector2(sim.player_x, sim.player_y)
 	_sync_player(0.0, false)
@@ -219,7 +227,30 @@ func _ready() -> void:
 
 	# --titleshot：开标题画面截图
 	if OS.get_cmdline_user_args().has("--titleshot"):
+		_set_gameplay_ui(false)
 		title.open()
+		await RenderingServer.frame_post_draw
+		await RenderingServer.frame_post_draw
+		_save_shot()
+		get_tree().quit()
+		return
+
+	# --helpshot=<页号 0~3>：游戏说明截图。排版只能靠眼睛看，headless 测不出来
+	for a in OS.get_cmdline_user_args():
+		if a.begins_with("--helpshot"):
+			var pno := int(a.split("=")[-1]) if "=" in a else 0
+			_set_gameplay_ui(false)
+			help.open("title")
+			help.show_page(pno)
+			await RenderingServer.frame_post_draw
+			await RenderingServer.frame_post_draw
+			_save_shot()
+			get_tree().quit()
+			return
+
+	# --pauseshot：暂停界面截图
+	if OS.get_cmdline_user_args().has("--pauseshot"):
+		pause.open()
 		await RenderingServer.frame_post_draw
 		await RenderingServer.frame_post_draw
 		_save_shot()
@@ -310,7 +341,18 @@ func _ready() -> void:
 	# 正常开局（一个命令行参数都没有）→ 标题 → 选角色 → 开打。
 	# 带参数的启动一律直接开局：headless 测试和截图流程不能被弹窗挡住。
 	if OS.get_cmdline_user_args().is_empty():
+		# 血条、武器栏、受击红光都是"对局中"的东西，标题和选人阶段不该露出来
+		# （之前标题页左上角一直挂着一条空血条，像渲染残影）。
+		_set_gameplay_ui(false)
 		title.open()
+
+
+## 游戏内常驻 UI（血条 / 武器栏 / 受击红光）的统一开关。
+## 只在"标题 ↔ 对局"两个状态间切换，暂停和弹窗不动它们 ——
+## 暂停时玩家正要盯着血条决定要不要喝口药。
+func _set_gameplay_ui(on: bool) -> void:
+	hud.visible = on
+	vignette.visible = on
 
 
 ## 标题画面点掉之后进选人。
@@ -329,6 +371,7 @@ func _cmd_char() -> String:
 ## 换角色后重建一局。只有真的换了角色才需要重建 ——
 ## 选人界面默认就停在上一局那个角色上，直接确认时什么都不用做。
 func _on_char_selected(cid: String) -> void:
+	_set_gameplay_ui(true)
 	if cid == sim.char_id:
 		return
 	sim = Sim.new()
@@ -592,6 +635,68 @@ func _cardtest() -> void:
 		f.close()
 		print("  已导出课件表: " + ProjectSettings.globalize_path(out))
 	print("")
+
+
+## ESC：游戏中开暂停，暂停中再按一次继续。
+## 说明页自己处理 ESC（返回上一页），这里必须先让开，否则一次按键穿透两层。
+func _input(event: InputEvent) -> void:
+	if not (event is InputEventKey):
+		return
+	var ke := event as InputEventKey
+	if ke.keycode != KEY_ESCAPE or not ke.pressed or ke.echo:
+		return
+	if help.is_open():
+		return
+	_toggle_pause()
+	get_viewport().set_input_as_handled()
+
+
+func _toggle_pause() -> void:
+	# 这些界面各有各的 ESC 语义（或根本不该被暂停打断），让它们自己处理
+	if title.is_open() or char_select.is_open() or level_up.visible or result.is_open():
+		return
+	if pause.is_open():
+		pause.close()
+		_resume_game()
+	else:
+		pause.open()
+
+
+func _resume_game() -> void:
+	get_tree().paused = false
+	Input.set_mouse_mode(Input.MOUSE_MODE_HIDDEN)
+
+
+func _on_pause_resume() -> void:
+	_resume_game()
+
+
+## 暂停里的「退出游戏」走和结算面板同一条路
+func _on_pause_quit() -> void:
+	_on_quit()
+
+
+func _on_pause_help() -> void:
+	help.open("pause")
+
+
+func _on_title_help() -> void:
+	title.set_active(false)
+	help.open("title")
+
+
+## 说明页返回：从暂停进来回暂停；从标题进来时标题页本来就在下面显示着，
+## 只要把它重新激活（恢复 Enter 响应和呼吸动画）。
+func _on_help_back(from: String) -> void:
+	if from == "pause":
+		pause.open()
+	else:
+		title.set_active(true)
+
+
+func _on_char_back() -> void:
+	_set_gameplay_ui(false)
+	title.open()
 
 
 func _process(delta: float) -> void:

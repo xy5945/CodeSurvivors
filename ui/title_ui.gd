@@ -13,6 +13,7 @@ extends CanvasLayer
 ##
 
 signal start_requested
+signal help_requested
 
 const C_TITLE := Color(0.62, 0.94, 1.0, 1.0)      # 青白：和场内电路板同色系
 const C_SUB := Color(1.0, 0.86, 0.42, 1.0)        # 金色：升级/进化的"奖励色"
@@ -21,7 +22,7 @@ const C_DIM := Color(0.60, 0.72, 0.86, 1.0)
 const TITLE_TEXT := "代码幸存者"
 const SUB_TEXT := "CODE  SURVIVORS"
 const DESC_TEXT := "你是一段程序 —— 在 Bug 的海洋里活到编译成功"
-const HINT_TEXT := "点击屏幕 或 按 Enter 开始"
+const HINT_TEXT := "按 Enter 也可以直接开始"
 
 var _bg: Node2D
 var _hint: Label
@@ -37,6 +38,12 @@ func _ready() -> void:
 
 func is_open() -> bool:
 	return _is_open
+
+
+## 打开说明页时把标题页"挂起"：它还显示着（当背景），但不再响应 Enter。
+## 不挂起的话，在说明页里按 Enter 会穿透到标题页直接开局。
+func set_active(b: bool) -> void:
+	_is_open = b
 
 
 func open() -> void:
@@ -84,12 +91,26 @@ func _build() -> void:
 	desc.size = Vector2(640.0, 20.0)
 	root.add_child(desc)
 
+	# 两个明确按钮取代原来的「点屏幕任意处开始」：后者玩家不知道点哪，
+	# 而且说明页没有入口 —— 想看武器表只能先开一局。
+	var start_btn := UiFont.make_button("开始游戏", 14, Color(1.0, 0.94, 0.72, 1.0))
+	start_btn.position = Vector2(240.0, 246.0)
+	start_btn.size = Vector2(160.0, 32.0)
+	start_btn.pressed.connect(func() -> void: _confirm())
+	root.add_child(start_btn)
+
+	var help_btn := UiFont.make_button("游戏说明", 12)
+	help_btn.position = Vector2(240.0, 286.0)
+	help_btn.size = Vector2(160.0, 28.0)
+	help_btn.pressed.connect(func() -> void: help_requested.emit())
+	root.add_child(help_btn)
+
 	_hint = Label.new()
 	_hint.text = HINT_TEXT
-	UiFont.apply(_hint, 12, C_SUB)
+	UiFont.apply(_hint, 10, C_DIM)
 	_hint.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	_hint.position = Vector2(0.0, 268.0)
-	_hint.size = Vector2(640.0, 20.0)
+	_hint.position = Vector2(0.0, 324.0)
+	_hint.size = Vector2(640.0, 18.0)
 	root.add_child(_hint)
 
 
@@ -118,9 +139,7 @@ func _input(event: InputEvent) -> void:
 		if k == KEY_ENTER or k == KEY_SPACE:
 			_confirm()
 			get_viewport().set_input_as_handled()
-	elif event is InputEventMouseButton and event.pressed:
-		_confirm()
-		get_viewport().set_input_as_handled()
+	# 鼠标不再"点哪都开始"：有按钮之后这个行为会变成误触
 
 
 ##

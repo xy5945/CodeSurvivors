@@ -34,7 +34,7 @@ var char_trait := CharDefs.T_LEARN
 var char_hp_mult := 1.0       # 角色属性修正（乘算，见 char_defs）
 var char_speed_mult := 1.0
 var iframe_mult := 1.0        # 测试工程师：受击后的无敌时间倍率
-var _cron_timer := 0.0        # 运维工程师：定时任务计时
+var _cron_timer := 0.0        # 全栈工程师：兜底回血计时
 var _recur_streak := 0        # 算法工程师：距下次全武器刷新的击杀数
 # 特性触发次数（测试断言用，也方便以后做结算统计）
 var recur_procs := 0
@@ -573,7 +573,7 @@ func _cast(i: int, e: EnemyPool, is_boss: bool, skill: String) -> float:
 	return 1.0
 
 
-## 角色特性：定时自愈（运维工程师）。
+## 角色特性：全栈兜底（全栈工程师）。
 func _update_trait(dt: float) -> void:
 	if char_trait != CharDefs.T_CRON:
 		return

@@ -612,7 +612,7 @@ static func _t_char_module() -> void:
 		d1, d3, b3, _ok(ok)])
 
 
-## 5 定时自愈（运维工程师）：到点回一次血，其他角色没有
+## 5 全栈兜底（全栈工程师）：到点回一次血，其他角色没有
 static func _t_char_cron() -> void:
 	var steps := int(26.0 / GameConfig.FIXED_DT)
 	var ops := _charmk("ops")
@@ -629,7 +629,7 @@ static func _t_char_cron() -> void:
 	for i in steps:
 		base.step(GameConfig.FIXED_DT, 0.0, 0.0)
 	var ok := ops.cron_procs == 1 and ops.player_hp > 50.0 		and base.cron_procs == 0 and absf(base.player_hp - 50.0) < 0.001
-	print("  5 定时自愈 · 运维 26 秒触发 %d 次 HP %.1f（实习生 %d 次 HP %.1f）· %s" % [
+	print("  5 全栈兜底 · 全栈 26 秒触发 %d 次 HP %.1f（实习生 %d 次 HP %.1f）· %s" % [
 		ops.cron_procs, ops.player_hp, base.cron_procs, base.player_hp, _ok(ok)])
 
 
