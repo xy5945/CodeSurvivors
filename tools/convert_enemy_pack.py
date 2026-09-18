@@ -48,7 +48,7 @@ SPECS = [
     ("oom",           r"骑士.png",                      "grid", 20, 0,    "union", False, 0),  # 内存不足(2x4网格8帧)
     ("bluescreen",    r"斧头恶魔\run_#.png",            "seq",  16, 0,    "union", False, 0),  # 蓝屏(6帧)
     ("elite_skull",   r"飞行骷髅.gif",                  "gif",  28, 0,    "union", False, 0),  # 精英怪(24帧, 带卫星弹)
-    ("trojan",        r"console_29.png",                "png",  14, 0,    "union", False, 0),  # 木马
+    ("trojan",        r"1.png",                         "png",  14, 0,    "union", False, 0),  # 木马(掌机图标,伪装成玩具的木马)
     ("mojibake",      r"飞行透露.gif",                  "gif",  14, 0.05, "per",   False, 0),  # 乱码(3帧, 精灵漂移)
     ("popup",         r"bee.gif",                       "gif",  14, 0,    "union", True,  0),  # 弹窗(8帧,源图朝左)
     ("junk_file",     r"骷髅兵.gif",                    "gif",  16, 0,    "union", False, 0),  # 垃圾文件(6帧)
@@ -232,8 +232,14 @@ def ascii_preview(frame: Image.Image, cols: int = 18) -> str:
 
 def main() -> None:
     os.makedirs(OUT_DIR, exist_ok=True)
+    # 命令行传名字可以只重转指定的敌人：python tools/convert_enemy_pack.py trojan
+    # 不传 = 全量重转。单换一张贴图时别全量跑 —— 万一某个源文件挪了位置，
+    # 会把其他 10 个敌人的表也一起重写，diff 里全是无关变化。
+    only = set(a for a in sys.argv[1:] if not a.startswith("-"))
     report = []
     for name, src, kind, target_h, comp_frac, trim_mode, flip, max_frames in SPECS:
+        if only and name not in only:
+            continue
         path = find_file(src, kind)
         frames = extract_frames(path, kind, max_frames)
 

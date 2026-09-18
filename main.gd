@@ -324,19 +324,21 @@ func _ready() -> void:
 	if OS.get_cmdline_user_args().has("--dropchest"):
 		sim.gems.spawn_chest(sim.player_x + 70.0, sim.player_y)
 
-	# --spawn=<敌人id>：在玩家周围摆一圈指定敌人，配合 --shot 验证美术
-		for a in OS.get_cmdline_user_args():
-			if a.begins_with("--spawn="):
-				var ei := EnemyDB.idx_of(a.substr(8))
-				if ei >= 0:
-					var d: Dictionary = EnemyDB.DEFS[ei]
-					for k in 12:
-						var ang := TAU * float(k) / 12.0
-						sim.enemies.spawn(
-							sim.player_x + cos(ang) * 90.0,
-							sim.player_y + sin(ang) * 90.0,
-							d.hp, 0.0, d.radius, ei
-						)
+	# --spawn=<敌人id>：在玩家周围摆一圈指定敌人，配合 --shot 验证美术。
+	# 缩进教训：这个 for 曾经多缩进一层，被解析进上面 --dropchest 的分支体里，
+	# 结果 --spawn 单独传时静默无效（一圈敌人一个都不出来），必须两个参数一起传才行。
+	for a in OS.get_cmdline_user_args():
+		if a.begins_with("--spawn="):
+			var ei := EnemyDB.idx_of(a.substr(8))
+			if ei >= 0:
+				var d: Dictionary = EnemyDB.DEFS[ei]
+				for k in 12:
+					var ang := TAU * float(k) / 12.0
+					sim.enemies.spawn(
+						sim.player_x + cos(ang) * 90.0,
+						sim.player_y + sin(ang) * 90.0,
+						d.hp, 0.0, d.radius, ei
+					)
 
 	# 正常开局（一个命令行参数都没有）→ 标题 → 选角色 → 开打。
 	# 带参数的启动一律直接开局：headless 测试和截图流程不能被弹窗挡住。
