@@ -27,9 +27,22 @@ func _draw() -> void:
 		var back := int(w["phase"]) == 1
 		var c := WAVE_BACK_COLOR if back else WAVE_COLOR
 		var fade := 1.0 - (r / maxf(float(w["max"]), 1.0)) * 0.35
-		# 回卷画成虚线感的细环，和扩散阶段一眼能区分开
-		draw_arc(Vector2(w["x"], w["y"]), r, 0.0, TAU, 40,
-			Color(c.r, c.g, c.b, c.a * fade), 3.0 if not back else 2.0)
+		var col := Color(c.r, c.g, c.b, c.a * fade)
+		var pos := Vector2(w["x"], w["y"])
+		# 广播 = 发消息：画成"4 段弧 + 朝传播方向的箭头"，而不是一整圈实线。
+		# 一圈线分不出"往外发"还是"往回收"，加了方向箭头之后，
+		# 扩散（蓝）和回卷（金，广播并等待）一眼就能分开。
+		draw_arc(pos, r, 0.0, TAU, 40, Color(col.r, col.g, col.b, col.a * 0.30), 1.5)
+		var dir := -1.0 if back else 1.0
+		var segs := 4
+		var step := TAU / float(segs)
+		var k := 0
+		while k < segs:
+			var a0 := step * float(k) + sim.time * 0.6 * dir
+			var am := a0 + step * 0.31
+			draw_arc(pos, r, a0, a0 + step * 0.62, 10, col, 3.0 if not back else 2.0)
+			_chevron(pos + Vector2(cos(am), sin(am)) * r, am + PI * 0.5 * dir, 7.0, col, 2.0)
+			k += 1
 
 	# 落雷已改由 BoltRenderer 播放手绘帧序列（assets/fx/bolt/），这里只画波。
 
@@ -55,3 +68,12 @@ func _draw_hazards() -> void:
 		# 读秒环：从外圈缩到中心
 		draw_arc(pos, maxf(r * (1.0 - p), 1.0), 0.0, TAU, 32,
 			Color(1.0, 0.62, 0.42, 0.85), 2.0)
+
+
+## 箭头：ang 是它指的方向
+func _chevron(p: Vector2, ang: float, size: float, col: Color, w: float = 2.0) -> void:
+	var d := Vector2(cos(ang), sin(ang))
+	var n := Vector2(-d.y, d.x)
+	var tip := p + d * size
+	draw_line(tip, p + n * size * 0.8, col, w)
+	draw_line(tip, p - n * size * 0.8, col, w)

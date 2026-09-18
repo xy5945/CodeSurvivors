@@ -38,6 +38,9 @@ var iframe := 0.0          # 接触伤害/危险区爆炸的无敌帧
 var bullet_iframe := 0.0
 var dead := false
 var damage_taken := 0.0    # 累计承受伤害（平衡回归用，god_mode 下不计）
+# 自伤累计（永真力场）。必须和 damage_taken 分开记：
+# 表现层拿它把"自己掉的血"从"挨打掉的血"里扣掉，否则受伤音效会每帧响一次。
+var self_dmg_total := 0.0
 
 # ---- 经验与升级 ----
 var level := 1
@@ -193,9 +196,12 @@ func hurt_player_bullet(v: float) -> bool:
 	return true
 
 
-func _apply_player_damage(v: float) -> void:
+func _apply_player_damage(v: float, is_self := false) -> void:
 	player_hp -= v
-	damage_taken += v
+	if is_self:
+		self_dmg_total += v
+	else:
+		damage_taken += v
 	if player_hp <= 0.0:
 		player_hp = 0.0
 		dead = true
@@ -210,7 +216,7 @@ func _apply_player_damage(v: float) -> void:
 func self_damage(v: float) -> void:
 	if dead or god_mode:
 		return
-	_apply_player_damage(v)
+	_apply_player_damage(v, true)
 
 
 func heal_player(v: float) -> void:

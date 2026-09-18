@@ -38,6 +38,7 @@ var _prev_gems := 0
 var _prev_patches := 0
 var _prev_chests := 0
 var _prev_hp := 0.0
+var _prev_self_dmg := 0.0   # 永真力场的自伤累计，用来把"自己掉的血"从受伤音效里剔除
 var _was_dead := false
 var _was_victory := false
 var _was_boss := false
@@ -615,8 +616,13 @@ func _sync_audio() -> void:
 	if sim.chests_collected > _prev_chests:
 		Sfx.play("chest")
 		knowledge.push("chest")
-	if sim.player_hp < _prev_hp - 0.001:
+	# 只有"被敌人打掉的血"才响受伤音。永真力场每帧自伤，
+	# 不扣掉它的话这把武器一开就是持续不断的噪音（实测全程响，听不下去）。
+	var hp_loss := _prev_hp - sim.player_hp
+	var self_loss := sim.self_dmg_total - _prev_self_dmg
+	if hp_loss > self_loss + 0.001:
 		Sfx.play("hurt")
+	_prev_self_dmg = sim.self_dmg_total
 
 	_prev_kills = sim.kills
 	_prev_gems = sim.gems_collected
