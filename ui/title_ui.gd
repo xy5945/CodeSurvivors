@@ -1,0 +1,174 @@
+class_name TitleUI
+extends CanvasLayer
+##
+## 开场标题画面。游戏现在有角色、有成长、有结算，但启动后直接进选人 ——
+## 缺一个"这是一个完整游戏"的门面，这是补齐的那块。
+##
+## 和选人/结算同一套规则：暂停整棵树 + process_mode = WHEN_PAUSED +
+## 固定 position/size（set_anchors_preset 在父节点没布局完时会算出错误 offset）。
+##
+## 美术全部代码画：标题是文字，背景是程序化网格 + 漂浮的 0/1。
+## 这游戏的视觉语言本来就是"程序世界"，画一张 Logo 图反而和场内的
+## 电路板底图对不上。
+##
+
+signal start_requested
+
+const C_TITLE := Color(0.62, 0.94, 1.0, 1.0)      # 青白：和场内电路板同色系
+const C_SUB := Color(1.0, 0.86, 0.42, 1.0)        # 金色：升级/进化的"奖励色"
+const C_DIM := Color(0.60, 0.72, 0.86, 1.0)
+
+const TITLE_TEXT := "代码幸存者"
+const SUB_TEXT := "CODE  SURVIVORS"
+const DESC_TEXT := "你是一段程序 —— 在 Bug 的海洋里活到编译成功"
+const HINT_TEXT := "点击屏幕 或 按 Enter 开始"
+
+var _bg: Node2D
+var _hint: Label
+var _is_open := false
+var _t := 0.0
+
+
+func _ready() -> void:
+	process_mode = Node.PROCESS_MODE_WHEN_PAUSED
+	_build()
+	hide()
+
+
+func is_open() -> bool:
+	return _is_open
+
+
+func open() -> void:
+	show()
+	_is_open = true
+	Input.set_mouse_mode(Input.MOUSE_MODE_VISIBLE)
+	get_tree().paused = true
+
+
+func _build() -> void:
+	var root := Control.new()
+	root.set_anchors_preset(Control.PRESET_FULL_RECT)
+	add_child(root)
+
+	var dim := ColorRect.new()
+	dim.set_anchors_preset(Control.PRESET_FULL_RECT)
+	dim.color = Color(0.01, 0.02, 0.04, 0.92)
+	root.add_child(dim)
+
+	# 背景装饰单独挂一个 Node2D 自己画（网格 + 漂浮的 0/1）
+	_bg = _TitleBg.new()
+	root.add_child(_bg)
+
+	var title := Label.new()
+	title.text = TITLE_TEXT
+	UiFont.apply(title, 42, C_TITLE)
+	title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	title.position = Vector2(0.0, 118.0)
+	title.size = Vector2(640.0, 54.0)
+	root.add_child(title)
+
+	var sub := Label.new()
+	sub.text = SUB_TEXT
+	UiFont.apply(sub, 14, C_SUB)
+	sub.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	sub.position = Vector2(0.0, 178.0)
+	sub.size = Vector2(640.0, 22.0)
+	root.add_child(sub)
+
+	var desc := Label.new()
+	desc.text = DESC_TEXT
+	UiFont.apply(desc, 12, C_DIM)
+	desc.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	desc.position = Vector2(0.0, 214.0)
+	desc.size = Vector2(640.0, 20.0)
+	root.add_child(desc)
+
+	_hint = Label.new()
+	_hint.text = HINT_TEXT
+	UiFont.apply(_hint, 12, C_SUB)
+	_hint.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	_hint.position = Vector2(0.0, 268.0)
+	_hint.size = Vector2(640.0, 20.0)
+	root.add_child(_hint)
+
+
+func _process(dt: float) -> void:
+	if not _is_open:
+		return
+	_t += dt
+	# 提示呼吸：全屏静止不动会让人以为卡住了
+	_hint.modulate.a = 0.55 + 0.45 * (0.5 + 0.5 * sin(_t * 3.0))
+
+
+func _confirm() -> void:
+	if not _is_open:
+		return
+	_is_open = false
+	hide()
+	get_tree().paused = false
+	start_requested.emit()
+
+
+func _input(event: InputEvent) -> void:
+	if not _is_open:
+		return
+	if event is InputEventKey and event.pressed and not event.echo:
+		var k := (event as InputEventKey).keycode
+		if k == KEY_ENTER or k == KEY_SPACE:
+			_confirm()
+			get_viewport().set_input_as_handled()
+	elif event is InputEventMouseButton and event.pressed:
+		_confirm()
+		get_viewport().set_input_as_handled()
+
+
+##
+## 标题背景：程序化网格 + 向下漂浮的 0/1。
+## 内嵌在这里而不是单独建文件 —— 只服务于这一个画面，拆出去反而要到处找。
+##
+class _TitleBg extends Node2D:
+	const CELL := 40.0
+	const N_CHARS := 26
+
+	var _t := 0.0
+	var _chars: Array[Dictionary] = []
+
+
+	func _ready() -> void:
+		for i in N_CHARS:
+			_chars.append({
+				"x": randf() * 640.0,
+				"y": randf() * 360.0,
+				"v": 12.0 + randf() * 26.0,
+				"c": "1" if randf() < 0.5 else "0",
+			})
+
+
+	func _process(dt: float) -> void:
+		_t += dt
+		for d in _chars:
+			d["y"] = float(d["y"]) + float(d["v"]) * dt
+			if float(d["y"]) > 370.0:
+				d["y"] = -10.0
+				d["x"] = randf() * 640.0
+		queue_redraw()
+
+
+	func _draw() -> void:
+		# 网格：和场内电路板底图同一语言，慢速右移制造"程序在跑"的感觉
+		var off := _t * 6.0
+		var x := -fmod(off, CELL)
+		while x < 640.0:
+			draw_line(Vector2(x, 0.0), Vector2(x, 360.0), Color(0.25, 0.75, 0.95, 0.05), 1.0)
+			x += CELL
+		var y := 0.0
+		while y < 360.0:
+			draw_line(Vector2(0.0, y), Vector2(640.0, y), Color(0.25, 0.75, 0.95, 0.05), 1.0)
+			y += CELL
+
+		# 漂浮的 0/1：用默认字体画（数字不需要中文字体）
+		var f := ThemeDB.fallback_font
+		for d in _chars:
+			draw_string(f, Vector2(float(d["x"]), float(d["y"])), str(d["c"]),
+				HORIZONTAL_ALIGNMENT_LEFT, -1.0, 13, Color(0.35, 0.85, 1.0, 0.20))

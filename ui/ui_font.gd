@@ -3,22 +3,22 @@ extends RefCounted
 ##
 ## 中文字体。Godot 默认字体不含中文字形，不指定的话运行起来全是"□□□□"。
 ##
-## 这里用 SystemFont 指向系统中文字体，只为让第一版跑通。
-## 正式做 UI 时应换成项目内的字体文件（思源黑体 Noto Sans SC，SIL OFL 可商用）——
-## 系统字体有版权风险，且打包到别的机器上可能缺失。
+## 字体文件内嵌在项目里（fonts/NotoSansSC-Regular.ttf，思源黑体 SIL OFL 可商用）。
+## 早期用 SystemFont 指向微软雅黑只为让第一版跑通 —— 那有两个硬伤：
+##   1. 换台机器（尤其导出 exe 之后）没有这个字体就整屏方框
+##   2. 系统字体不能随包分发，有版权风险
+## 内嵌这份是子集：项目用到的字符 + GB2312 常用汉字（3.4MB，全量 17.7MB）。
+## 新增中文文案后重新生成，见 tools/font/gen_font_subset.py。
 ##
 
-static var _cache: SystemFont = null
+const FONT_PATH := "res://fonts/NotoSansSC-Regular.ttf"
+
+static var _cache: Font = null
 
 
-static func cjk() -> SystemFont:
+static func cjk() -> Font:
 	if _cache == null:
-		var f := SystemFont.new()
-		# 注意：PackedStringArray 没有 (String, String, ...) 构造函数，只能从数组字面量构造
-		f.font_names = PackedStringArray([
-			"Microsoft YaHei", "Noto Sans CJK SC", "SimHei", "sans-serif"
-		])
-		_cache = f
+		_cache = load(FONT_PATH)
 	return _cache
 
 

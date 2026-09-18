@@ -5,12 +5,13 @@ extends Node2D
 ## 必须分开：一个 MultiMesh 只能有一张贴图，而三者外观完全不同：
 ##   宝石   = gem.png（紫色水晶，加经验）
 ##   补丁包 = patch.png（绿色医疗包，回血 —— RPG Icon Pack icon_390）
-##   宝箱   = 暂无贴图，用金色方块代替（精英怪必掉，大额回血；贴图到位再换）
+##   宝箱   = chest.png（金色宝箱，精英怪必掉的大额回血）
 ## 玩家要在混战里一眼分清"经验 / 救命 / 大奖"。
 ##
 
 const GEM_PATH := "res://assets/sprites/gem.png"
 const PATCH_PATH := "res://assets/sprites/patch.png"
+const CHEST_PATH := "res://assets/sprites/chest.png"
 const WHITE := Color(1.0, 1.0, 1.0, 1.0)
 const CHEST_COLOR := Color(1.0, 0.82, 0.25, 1.0)   # 金色，与绿色补丁包、紫色宝石拉开
 # 碰撞半径只有 5px（直径 10），但 32x32 的水晶图标压到 10px 就糊成一团了。
@@ -36,7 +37,7 @@ func setup(cap: int) -> void:
 	var r := GameConfig.GEM_RADIUS * 2.0 * VISUAL_SCALE
 	_gem = _make(cap, SpriteMesh.quad(r), GEM_PATH)
 	_patch = _make(cap, SpriteMesh.quad(GameConfig.PATCH_RADIUS * 2.0 * PATCH_VISUAL_SCALE), PATCH_PATH)
-	_chest = _make(cap, SpriteMesh.quad(CHEST_SIZE), "")
+	_chest = _make(cap, SpriteMesh.quad(CHEST_SIZE), CHEST_PATH)
 
 
 func _make(cap: int, mesh: ArrayMesh, tex_path: String) -> MultiMesh:

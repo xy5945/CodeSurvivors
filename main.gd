@@ -21,6 +21,7 @@ extends Node2D
 @onready var knowledge: KnowledgeUI = $KnowledgeUI
 @onready var result: ResultUI = $ResultUI
 @onready var char_select: CharSelectUI = $CharSelectUI
+@onready var title: TitleUI = $TitleUI
 @onready var vignette: DamageVignette = $DamageVignette
 
 var sim: Sim
@@ -150,6 +151,7 @@ func _ready() -> void:
 	result.restart_requested.connect(_on_restart)
 	result.quit_requested.connect(_on_quit)
 	char_select.selected.connect(_on_char_selected)
+	title.start_requested.connect(_on_title_start)
 
 	camera.position = Vector2(sim.player_x, sim.player_y)
 	_sync_player(0.0, false)
@@ -208,6 +210,15 @@ func _ready() -> void:
 			_save_shot()
 			get_tree().quit()
 			return
+
+	# --titleshot：开标题画面截图
+	if OS.get_cmdline_user_args().has("--titleshot"):
+		title.open()
+		await RenderingServer.frame_post_draw
+		await RenderingServer.frame_post_draw
+		_save_shot()
+		get_tree().quit()
+		return
 
 	# --charshot[=<角色id>]：开选人界面截图（选人会暂停整棵树，
 	# --shot 的倒计时跑不动，所以和结算一样单独给一条路径）
@@ -271,7 +282,12 @@ func _ready() -> void:
 				sim.loadout.recompute()
 				if EvolveDefs.is_evo_id(gid):
 					sim.loadout.apply_evolution(gid)
-		# --spawn=<敌人id>：在玩家周围摆一圈指定敌人，配合 --shot 验证美术
+		# --dropchest：在玩家旁边摆一个宝箱，配合 --shot 验证宝箱美术
+	#（宝箱只能靠击杀精英获得，手点太慢，截图需要一条直达路径）
+	if OS.get_cmdline_user_args().has("--dropchest"):
+		sim.gems.spawn_chest(sim.player_x + 70.0, sim.player_y)
+
+	# --spawn=<敌人id>：在玩家周围摆一圈指定敌人，配合 --shot 验证美术
 		for a in OS.get_cmdline_user_args():
 			if a.begins_with("--spawn="):
 				var ei := EnemyDB.idx_of(a.substr(8))
@@ -285,10 +301,15 @@ func _ready() -> void:
 							d.hp, 0.0, d.radius, ei
 						)
 
-	# 正常开局（一个命令行参数都没有）→ 先选角色再开打。
+	# 正常开局（一个命令行参数都没有）→ 标题 → 选角色 → 开打。
 	# 带参数的启动一律直接开局：headless 测试和截图流程不能被弹窗挡住。
 	if OS.get_cmdline_user_args().is_empty():
-		char_select.open()
+		title.open()
+
+
+## 标题画面点掉之后进选人。
+func _on_title_start() -> void:
+	char_select.open()
 
 
 ## --char=<角色id>：跳过选人直接开局（测试与截图用）。
@@ -453,6 +474,12 @@ func _uitest() -> void:
 	print("全满级后抽 3 张 → %s" % [
 		", ".join(last.map(func(c): return str(c["def"]["name"])))
 	])
+
+	# 中文字体：内嵌字体没加载上的话 headless 里看不出任何异常，
+	# 到了没装中文字体的机器上就是整屏方框 —— 所以这里必须显式断言。
+	var f := UiFont.cjk()
+	print("  中文字体 · %s · %s" % [
+		f.resource_path if f != null else "未加载", "OK" if f != null else "FAIL"])
 	print("")
 
 
