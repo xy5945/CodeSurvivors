@@ -150,6 +150,14 @@ const BOLT_LIFE := 0.55             # 落雷视觉时长 = 动画 16 帧放完�
 const MARK_DURATION := 3.0          # 被标记后 3 秒内
 const MARK_BONUS := 0.10            # 受到的所有伤害 +10%
 
+# ---- 多线程齐射 ----
+const VOLLEY_RADIUS := 5.0
+const VOLLEY_LIFE := 1.6
+
+# ---- 断点调试 ----
+const FREEZE_DMG_BONUS := 0.50      # 冻结期间受到的所有伤害 +50%
+const FREEZE_FLASH_TINT := 0.0      # 渲染层用（冻结敌人偏蓝）
+
 
 ## 场上敌人数目标值。t = 存活秒数。
 ##

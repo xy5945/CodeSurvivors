@@ -9,9 +9,13 @@ extends RefCounted
 
 const KIND_BLADE := 0
 const KIND_POINTER := 1
+# 多线程齐射：不追踪的直飞弹。和飞刃共用"命中即结算"的碰撞路径，
+# 只是 kind 分支里不做弹射、也不走 _homing —— 所以它不需要任何新字段。
+const KIND_VOLLEY := 2
 
 const BLADE_LIFE := 2.0
 const POINTER_LIFE := 3.0
+const VOLLEY_LIFE := 1.6
 
 var px := PackedFloat32Array()
 var py := PackedFloat32Array()
@@ -97,6 +101,33 @@ func spawn_pointer(x: float, y: float, vel_x: float, vel_y: float, damage: float
 	bounces[count] = 0
 	pierce[count] = pierce_v
 	mark[count] = 1 if mark_v else 0
+	count += 1
+	return true
+
+
+## 齐射弹：朝指定方向直飞，命中即消失（满级穿透 1 个）。
+## 它和指针追踪的区别只有两个：不追踪、不标记。其余（移动、碰撞、
+## 穿透、命中冷却）全部走 ProjectileSystem 的通用路径。
+func spawn_volley(x: float, y: float, vel_x: float, vel_y: float, damage: float,
+		pierce_v: int) -> bool:
+	if count >= px.size():
+		return false
+	px[count] = x
+	py[count] = y
+	vx[count] = vel_x
+	vy[count] = vel_y
+	dmg[count] = damage
+	life[count] = VOLLEY_LIFE
+	radius[count] = GameConfig.VOLLEY_RADIUS
+	decay[count] = 1.0
+	spd_bonus[count] = 0.0
+	seek[count] = 0.0
+	ang[count] = atan2(vel_y, vel_x)
+	cd[count] = 0.0
+	kind[count] = KIND_VOLLEY
+	bounces[count] = 0
+	pierce[count] = pierce_v
+	mark[count] = 0
 	count += 1
 	return true
 

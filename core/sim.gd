@@ -201,6 +201,18 @@ func _apply_player_damage(v: float) -> void:
 		dead = true
 
 
+## 自伤入口（永真力场）。
+##
+## 不走 hurt_player 是有意的：那是"被敌人打"的入口，会置无敌帧、记
+## damage_taken、触发受击红光与音效。永真力场每秒扣的那点血是玩家自己
+## 选的代价，不能每 0.1 秒让屏幕红一次 —— 那样这把武器根本没人敢拿。
+## 但它必须能致死，所以复用 _apply_player_damage 的死亡判定。
+func self_damage(v: float) -> void:
+	if dead or god_mode:
+		return
+	_apply_player_damage(v)
+
+
 func heal_player(v: float) -> void:
 	if dead:
 		return
@@ -278,6 +290,15 @@ func _move_enemies(dt: float) -> void:
 			e.orb_cd[i] -= dt
 		if e.mark[i] > 0.0:
 			e.mark[i] -= dt
+
+		# 断点调试：冻结中的敌人彻底停摆 —— 不移动、不被分离推挤、不放技能，
+		# 也不造成接触伤害。技能倒计时同样不走（_skill_tick 在下面被跳过），
+		# 否则解冻的瞬间全场精英会集体放招，控制反而变成惩罚。
+		# 动画也定格：定格本身就是在告诉玩家"它被暂停了"。
+		if e.freeze[i] > 0.0:
+			e.freeze[i] -= dt
+			i += 1
+			continue
 
 		# 行走动画相位。必须取模而不是一直累加 —— 一局 20 分钟，
 		# 累加到几千之后 float32 精度不够，帧号会卡住不动。

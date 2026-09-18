@@ -18,12 +18,17 @@ const WHITE := Color(1.0, 1.0, 1.0, 1.0)
 const BASE_SIZE := 12.0
 const BLADE_SCALE := 1.2
 const POINTER_SCALE := 1.0   # 素材内容占 14/16 帧，接近旧色块的视觉尺寸
+# 多线程齐射的弹没有贴图：它是"一串并发的线程"，画成纯色小方块最贴题，
+# 也省一张素材。颜色走 MultiMesh 的实例色，青色和递归飞刃/指针一眼分得开。
+const VOLLEY_SIZE := 9.0
+const C_VOLLEY := Color(0.40, 0.95, 1.0, 1.0)
 const POINTER_FRAMES := 30
 const POINTER_FPS := 20.0
 # 贴图里刀尖指向的角度修正。素材刀身若不是朝右（0 弧度方向），改这一个常量即可。
 const BLADE_ROT_OFFSET := 0.0
 
 var _blade: MultiMesh
+var _volley: MultiMesh
 var _ptr_sprites: Array[Sprite2D] = []
 var _ptr_phase := PackedFloat32Array()   # 每颗弹自己的动画偏移
 var _prev_alive := 0                     # 上一帧的投射物总数（池是紧凑数组，下标 >= 它的就是新弹）
@@ -32,6 +37,7 @@ var _anim_time := 0.0
 
 func setup(cap: int) -> void:
 	_blade = _make(cap, SpriteMesh.quad(BASE_SIZE * BLADE_SCALE), BLADE_PATH)
+	_volley = _make(cap, SpriteMesh.quad(VOLLEY_SIZE), "")
 
 	_ptr_phase.resize(cap)
 	for i in cap:
@@ -69,6 +75,7 @@ func _process(delta: float) -> void:
 func sync(pool: ProjectilePool) -> void:
 	var nb := 0
 	var np := 0
+	var nv := 0
 	var base_frame := int(_anim_time * POINTER_FPS) % POINTER_FRAMES
 
 	var i := 0
@@ -79,6 +86,12 @@ func sync(pool: ProjectilePool) -> void:
 			)
 			_blade.set_instance_color(nb, WHITE)
 			nb += 1
+		elif pool.kind[i] == ProjectilePool.KIND_VOLLEY:
+			_volley.set_instance_transform_2d(
+				nv, Transform2D(pool.ang[i], Vector2.ONE, 0.0, Vector2(pool.px[i], pool.py[i]))
+			)
+			_volley.set_instance_color(nv, C_VOLLEY)
+			nv += 1
 		else:
 			# 池用 swap_remove 保持紧凑：下标 >= 上一帧总数的必然是刚 spawn 的弹
 			if i >= _prev_alive:
@@ -92,6 +105,7 @@ func sync(pool: ProjectilePool) -> void:
 		i += 1
 
 	_blade.visible_instance_count = nb
+	_volley.visible_instance_count = nv
 	while np < _ptr_sprites.size():
 		_ptr_sprites[np].visible = false
 		np += 1

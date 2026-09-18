@@ -74,7 +74,7 @@ func update(dt: float, sim) -> void:
 			var dy: float = e.py[j] - y
 			if dx * dx + dy * dy > r2:
 				continue
-			e.hp[j] -= damage
+			e.hp[j] -= damage * e.dmg_mult(j)
 			e.flash[j] = GameConfig.ORBIT_FLASH
 			e.orb_cd[j] = hit_cd
 

@@ -11,6 +11,7 @@ extends Node2D
 @onready var projectile_renderer: Node2D = $ProjectileRenderer
 @onready var enemy_bullet_renderer: Node2D = $EnemyBulletRenderer
 @onready var fx_renderer: Node2D = $FxRenderer
+@onready var aura_renderer: Node2D = $AuraRenderer
 @onready var bolt_renderer: Node2D = $BoltRenderer
 @onready var whip_arc: Node2D = $WhipArc
 @onready var player_view: PlayerView = $PlayerView
@@ -139,6 +140,7 @@ func _ready() -> void:
 	projectile_renderer.setup(GameConfig.MAX_PROJECTILES)
 	enemy_bullet_renderer.setup(GameConfig.MAX_ENEMY_BULLETS)
 	fx_renderer.sim = sim
+	aura_renderer.sim = sim
 	bolt_renderer.sim = sim
 	whip_arc.sim = sim
 	level_up.sim = sim
@@ -203,6 +205,12 @@ func _ready() -> void:
 			_save_shot()
 			get_tree().quit()
 			return
+
+	if OS.get_cmdline_user_args().has("--wpn6test"):
+		set_process(false)
+		Bench.run_wpn6()
+		get_tree().quit()
+		return
 
 	if OS.get_cmdline_user_args().has("--uitest"):
 		set_process(false)

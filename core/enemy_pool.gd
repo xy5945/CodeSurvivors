@@ -19,11 +19,18 @@ const ANIM_RATE := 8.0
 var px := PackedFloat32Array()
 var py := PackedFloat32Array()
 var hp := PackedFloat32Array()
+# 出生时的血量。垃圾回收要按"血量低于 X%"来判定残血，没有它就只能拿
+# EnemyDB 的基准值反推 —— 而敌人血量是随时间成长的，反推会算错。
+var hp_max := PackedFloat32Array()
 var speed := PackedFloat32Array()
 var radius := PackedFloat32Array()
 var flash := PackedFloat32Array()   # 受击闪白剩余时间
 var orb_cd := PackedFloat32Array()  # 循环护盾的独立受击冷却（每个敌人独立计时）
 var mark := PackedFloat32Array()    # 指针追踪的标记剩余时间：>0 时受到的所有伤害 +10%
+# 断点调试的冻结剩余时间：>0 时敌人完全不动、技能不放。
+# 冻结同时附带 +50% 易伤（见 dmg_mult）—— 只冻不打等于浪费一次控制，
+# 玩家会觉得"这把武器没伤害"，所以控制和增伤必须绑在一起。
+var freeze := PackedFloat32Array()
 # 行走动画相位，取值 [0, FRAMES)。spawn 时随机初始化 ——
 # 不随机的话全场敌人整齐划一地踏步，看着像机器军团。
 var anim := PackedFloat32Array()
@@ -50,11 +57,13 @@ func _init(cap: int) -> void:
 	px.resize(cap)
 	py.resize(cap)
 	hp.resize(cap)
+	hp_max.resize(cap)
 	speed.resize(cap)
 	radius.resize(cap)
 	flash.resize(cap)
 	orb_cd.resize(cap)
 	mark.resize(cap)
+	freeze.resize(cap)
 	anim.resize(cap)
 	type.resize(cap)
 	skill_cd.resize(cap)
@@ -75,11 +84,13 @@ func spawn(x: float, y: float, hp_v: float, spd_v: float, rad_v: float, type_v: 
 	px[count] = x
 	py[count] = y
 	hp[count] = hp_v
+	hp_max[count] = hp_v
 	speed[count] = spd_v
 	radius[count] = rad_v
 	flash[count] = 0.0
 	orb_cd[count] = 0.0
 	mark[count] = 0.0
+	freeze[count] = 0.0
 	anim[count] = randf() * float(FRAMES)
 	type[count] = type_v
 	skill_cd[count] = 3.0 + randf() * 2.0    # 出生先普走几秒，技能别开场就放
@@ -100,11 +111,13 @@ func kill(i: int) -> void:
 		px[i] = px[last]
 		py[i] = py[last]
 		hp[i] = hp[last]
+		hp_max[i] = hp_max[last]
 		speed[i] = speed[last]
 		radius[i] = radius[last]
 		flash[i] = flash[last]
 		orb_cd[i] = orb_cd[last]
 		mark[i] = mark[last]
+		freeze[i] = freeze[last]
 		anim[i] = anim[last]
 		type[i] = type[last]
 		skill_cd[i] = skill_cd[last]
@@ -114,6 +127,20 @@ func kill(i: int) -> void:
 		skill_dy[i] = skill_dy[last]
 		skill_seq[i] = skill_seq[last]
 	count -= 1
+
+
+## 该敌人当前受到的伤害倍率（标记的 +10% 与冻结的 +50% 可叠加）。
+##
+## 所有伤害结算点都必须乘它 —— 之前 mark 的判定是内联在每个伤害点里的，
+## 加冻结时如果照抄一遍就会变成两处重复的三元表达式，以后再加"易伤"类
+## 效果还得改第三、第四处。收成一个函数，加效果只改这里。
+func dmg_mult(i: int) -> float:
+	var m := 1.0
+	if mark[i] > 0.0:
+		m += GameConfig.MARK_BONUS
+	if freeze[i] > 0.0:
+		m += GameConfig.FREEZE_DMG_BONUS
+	return m
 
 
 func clear() -> void:

@@ -83,8 +83,7 @@ func _collide(i: int, sim, p: ProjectilePool, e: EnemyPool, g: SpatialGrid) -> b
 		if dx * dx + dy * dy > r2:
 			continue
 
-		var bonus: float = 1.0 + GameConfig.MARK_BONUS if e.mark[j] > 0.0 else 1.0
-		e.hp[j] -= p.dmg[i] * bonus
+		e.hp[j] -= p.dmg[i] * e.dmg_mult(j)
 		e.flash[j] = PROJ_FLASH
 		if p.mark[i] == 1:
 			e.mark[j] = GameConfig.MARK_DURATION

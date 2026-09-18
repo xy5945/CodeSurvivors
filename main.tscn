@@ -1,4 +1,4 @@
-[gd_scene load_steps=17 format=3]
+[gd_scene load_steps=18 format=3]
 
 [ext_resource type="Script" path="res://main.gd" id="1_main"]
 [ext_resource type="Script" path="res://render/enemy_renderer.gd" id="2_er"]
@@ -16,6 +16,7 @@
 [ext_resource type="Script" path="res://render/enemy_bullet_renderer.gd" id="14_eb"]
 [ext_resource type="Script" path="res://ui/knowledge_ui.gd" id="15_kb"]
 [ext_resource type="Script" path="res://ui/result_ui.gd" id="16_res"]
+[ext_resource type="Script" path="res://render/aura_renderer.gd" id="17_aura"]
 
 [node name="Main" type="Node2D"]
 script = ExtResource("1_main")
@@ -40,6 +41,9 @@ script = ExtResource("14_eb")
 
 [node name="FxRenderer" type="Node2D" parent="."]
 script = ExtResource("10_fx")
+
+[node name="AuraRenderer" type="Node2D" parent="."]
+script = ExtResource("17_aura")
 
 [node name="BoltRenderer" type="Node2D" parent="."]
 script = ExtResource("13_bolt")

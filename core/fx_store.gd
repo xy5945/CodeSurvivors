@@ -14,11 +14,19 @@ extends RefCounted
 
 var waves := []     # {x,y,r,prev,max,spd,dmg,back,phase,bonus}
 var bolts := []     # {x,y,r,dmg,life,dps}
+# 一次性脉冲：纯视觉的扩散环 + 常驻光环，都由 AuraRenderer 画。
+#
+# 它们没有伤害逻辑（伤害在生成它们的武器里就结算完了），存在的意义是
+# 让玩家"看见"刚才发生了一次范围事件 —— 后 6 把武器里有 4 把是范围型，
+# 没有视觉反馈的话玩家根本不知道武器有没有在工作。
+# kind 决定颜色：0=回收(青绿) 1=冻结(冰蓝) 2=重编译(橙) 3=溢出(品红)
+var pulses := []    # {x,y,r0,r1,life,life0,kind,follow}
 
 
 func clear() -> void:
 	waves.clear()
 	bolts.clear()
+	pulses.clear()
 
 
 func add_wave(x: float, y: float, max_r: float, spd: float, dmg: float,
@@ -43,6 +51,31 @@ func add_bolt(x: float, y: float, r: float, dmg: float, life: float, dps: float,
 func update(dt: float, sim) -> void:
 	_update_waves(dt, sim)
 	_update_bolts(dt, sim)
+	_update_pulses(dt, sim)
+
+
+## follow=true 时环跟着玩家走（光环类武器的表现），否则固定在生成点。
+func add_pulse(x: float, y: float, r0: float, r1: float, life: float,
+		kind: int, follow: bool = false) -> void:
+	pulses.append({
+		"x": x, "y": y, "r0": r0, "r1": r1,
+		"life": life, "life0": life, "kind": kind, "follow": follow,
+	})
+
+
+func _update_pulses(dt: float, sim) -> void:
+	var i := pulses.size() - 1
+	while i >= 0:
+		var p: Dictionary = pulses[i]
+		var life: float = float(p["life"]) - dt
+		if life <= 0.0:
+			pulses.remove_at(i)
+		else:
+			p["life"] = life
+			if bool(p["follow"]):
+				p["x"] = sim.player_x
+				p["y"] = sim.player_y
+		i -= 1
 
 
 func _update_waves(dt: float, sim) -> void:
@@ -112,7 +145,7 @@ func _damage_ring(sim, cx: float, cy: float, lo: float, hi: float, dmg: float,
 		var d2 := dx * dx + dy * dy
 		if d2 < lo2 or d2 > hi2:
 			continue
-		e.hp[j] -= dmg * (1.0 + GameConfig.MARK_BONUS if e.mark[j] > 0.0 else 1.0)
+		e.hp[j] -= dmg * e.dmg_mult(j)
 		e.flash[j] = GameConfig.WAVE_FLASH
 		hits += 1
 	return hits
@@ -137,6 +170,34 @@ func _update_bolts(dt: float, sim) -> void:
 		else:
 			b["life"] = life
 		i -= 1
+
+
+## 全量重编译：一次性全范围爆发。
+##
+## 不用 wave（扩散环）来打伤害：波的伤害是分帧按环带结算的，等它扫到边缘时
+## 玩家早就不知道"这一发打死了几个" —— 而"每次击杀减少冷却"需要**立刻**
+## 拿到击杀数。所以伤害一次性结算完，环只负责好看。
+## 返回本次造成的击杀数（由调用方换算成冷却缩减）。
+func blast(sim, x: float, y: float, r: float, dmg: float, hit_cap: int,
+		pulse_kind: int, pulse_life: float) -> int:
+	# 死的判定在 sim._reap（本帧稍后），所以这里数"血量已 <=0 但还没被回收"的
+	# 敌人数，前后各数一次取差。用 sim.kills 是错的 —— 那是整局累计击杀，
+	# 和本次爆炸的战果不是一回事，两者相减会得到一个离谱的负数或大数。
+	var before := _dying_count(sim)
+	_damage_ring(sim, x, y, 0.0, r, dmg, hit_cap if hit_cap > 0 else -1)
+	add_pulse(x, y, r * 0.25, r, pulse_life, pulse_kind, false)
+	return maxi(0, _dying_count(sim) - before)
+
+
+## 场上已濒死（hp<=0、等待 _reap 回收）的敌人数。
+## 只统计濒死差值，别的武器打死的敌人就不会算进重编译的战果里。
+func _dying_count(sim) -> int:
+	var e: EnemyPool = sim.enemies
+	var k := 0
+	for i in e.count:
+		if e.hp[i] <= 0.0:
+			k += 1
+	return k
 
 
 ## 落雷：落地瞬间结算一次范围伤害，同时留下视觉与（满级时）持续伤害。

@@ -59,6 +59,37 @@ const CARDS := [
 		"use": "想改一个大东西，不用整个复制，给地址就行",
 	},
 
+	{
+		"id": "volley", "kind": K_WEAPON, "term": "多线程", "code": "thread",
+		"plain": "几件事一起做，不用排队等",
+		"use": "一边下载一边看视频，就是同时在做两件事",
+	},
+	{
+		"id": "gc", "kind": K_WEAPON, "term": "垃圾回收", "code": "free()",
+		"plain": "用不上的东西，定时清掉",
+		"use": "不清理，内存越占越多，程序越来越卡",
+	},
+	{
+		"id": "buffer", "kind": K_WEAPON, "term": "数组越界", "code": "buf[i]",
+		"plain": "装不下了，还往里塞",
+		"use": "数组只有 10 个却取第 11 个，程序就会出错",
+	},
+	{
+		"id": "breakpoint", "kind": K_WEAPON, "term": "断点调试", "code": "breakpoint",
+		"plain": "让程序先停一下，看清楚了再走",
+		"use": "找不到错在哪，就在可疑的地方停下来看",
+	},
+	{
+		"id": "forever", "kind": K_WEAPON, "term": "死循环", "code": "while(true)",
+		"plain": "永远不停，直到把电耗光",
+		"use": "循环一定要有停下来的条件，不然会卡死",
+	},
+	{
+		"id": "rebuild", "kind": K_WEAPON, "term": "编译", "code": "compile",
+		"plain": "把整份代码重新翻译一遍",
+		"use": "改一行也要重新编译，大项目因此很慢",
+	},
+
 	# ================= 被动（5）=================
 	{
 		"id": "malloc", "kind": K_PASSIVE, "term": "申请内存", "code": "malloc",

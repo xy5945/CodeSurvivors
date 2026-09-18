@@ -297,6 +297,207 @@ static func _pick(choices: Array, sim, greedy: bool) -> Dictionary:
 	return fallback
 
 
+##
+## 后 6 把武器的机制自检。
+##
+## 这些武器里有一半带"状态"（叠层、冻结、蓄力、自损、安全阈），
+## 光看数值表测不出来：伤害数字对了，机制没生效照样是废武器。
+## 所以每一把都单独摆一圈木桩跑一遍，断言的是**行为**不是数字。
+##
+## 运行：godot --headless --path . -- --wpn6test
+##
+static func run_wpn6() -> void:
+	print("")
+	print("=== 后 6 把武器 · 机制测试 ===")
+	print("木桩：满级武器 + 静止靶子，只看行为是否发生")
+	print("")
+	_t_volley()
+	_t_gc()
+	_t_buffer()
+	_t_breakpoint()
+	_t_forever()
+	_t_rebuild()
+	print("")
+
+
+## 建一个只跑指定武器的仿真：关掉刷怪，免得场上的野生敌人污染计数。
+static func _w6mk(id: String, god: bool = true) -> Sim:
+	var sim := Sim.new()
+	sim.setup()
+	sim.spawn_enabled = false
+	sim.god_mode = god
+	# setup() 里的 spawn.prewarm 会先塞一批敌人进池（为了省首帧分配）。
+	# 不清掉的话：① 击杀/掉血统计里混进野生敌人 ② 它们死亡时 swap_remove
+	# 会把队尾搬到队头，于是 px[0] 悄悄换成另一只，"位置没变"的断言直接失效。
+	sim.enemies.clear()
+
+	# 还要卸掉起始武器（分支长鞭 Lv1）。它在每把武器的测试里都偷偷输出，
+	# 让"每次爆发掉血"的采样里混进一串 36，递增曲线直接看不出来。
+	# 注意光把 levels 清掉没用 —— 武器实例已经创建、enabled 已经是 true，
+	# 必须连 weapons / weapon_map 一起清空，recompute 才会重新按需创建。
+	sim.loadout.levels.clear()
+	sim.loadout.weapons.clear()
+	sim.loadout.weapon_map.clear()
+	sim.loadout.whip = null
+	sim.loadout.orbit = null
+	sim.loadout.forever = null
+	sim.loadout.buffer = null
+	sim.loadout.rebuild = null
+	sim.loadout.levels[id] = 8
+	sim.loadout.recompute()
+	return sim
+
+
+## 在玩家周围摆一圈木桩。spd = 0 时它们不会动（测"位置不变"要用）。
+static func _w6ring(sim, n: int, dist: float, hp: float, spd: float = 0.0) -> void:
+	for k in n:
+		var a := TAU * float(k) / float(n)
+		sim.enemies.spawn(
+			sim.player_x + cos(a) * dist,
+			sim.player_y + sin(a) * dist,
+			hp, spd, 10.0, 0
+		)
+
+
+static func _w6run(sim, seconds: float) -> void:
+	var steps := int(seconds / GameConfig.FIXED_DT)
+	for i in steps:
+		sim.step(GameConfig.FIXED_DT, 0.0, 0.0)
+
+
+static func _w6hp(sim) -> float:
+	var t := 0.0
+	for i in sim.enemies.count:
+		t += sim.enemies.hp[i]
+	return t
+
+
+## A 多线程齐射：一梭子要打到**多个不同**目标，而不是全部糊在最近那个上
+static func _t_volley() -> void:
+	var sim := _w6mk("volley")
+	_w6ring(sim, 12, 130.0, 500.0)
+	_w6run(sim, 1.2)
+	var hurt := 0
+	for i in sim.enemies.count:
+		if sim.enemies.hp[i] < 500.0:
+			hurt += 1
+	print("  A 多线程齐射 · 命中 %d/12 个不同目标 · %s" % [
+		hurt, "OK" if hurt >= 4 else "FAIL"])
+
+
+## B 垃圾回收：残血的直接清掉，满血的只吃回收伤害、不会被清
+static func _t_gc() -> void:
+	var sim := _w6mk("gc")
+	_w6ring(sim, 12, 100.0, 1000.0)
+	# hp_max 在 spawn 时就固定了，所以要"先满血生成、再打残"，
+	# 直接生成残血的话阈值算出来是 100%，永远不会被回收
+	for i in 6:
+		sim.enemies.hp[i] = 50.0
+	_w6run(sim, 0.05)
+	var left := sim.enemies.count
+	var full_total := _w6hp(sim)
+	var ok: bool = left == 6 and full_total < 12.0 * 1000.0 - 100.0
+	print("  B 垃圾回收 · 残血 6 个已清（剩 %d）· 满血扣到总血 %.0f · %s" % [
+		left, full_total, "OK" if ok else "FAIL"])
+
+
+## C 缓冲区溢出：连续命中要越打越疼，停火后加成清零
+static func _t_buffer() -> void:
+	var sim := _w6mk("buffer")
+	_w6ring(sim, 10, 60.0, 99999.0)
+	var w = sim.loadout.buffer
+
+	# 木桩会被"分离"逻辑互相推开，几秒后就散出了武器范围 ——
+	# 于是第二次爆发只打到一两个人，看起来像伤害没涨。
+	# 这里每帧把它们按回原位：要测的是伤害递增，不是推挤物理。
+	var ox := PackedFloat32Array()
+	var oy := PackedFloat32Array()
+	for i in sim.enemies.count:
+		ox.append(sim.enemies.px[i])
+		oy.append(sim.enemies.py[i])
+
+	# 按"每次爆发"采样，不能按固定时间窗口切：
+	# 窗口长度不是冷却的整数倍时，两段窗口里的爆发次数不一样，
+	# 第二次反而可能更小 —— 那是测量误差，不是机制坏了。
+	var bursts: Array[float] = []
+	var prev := _w6hp(sim)
+	for i in int(5.0 / GameConfig.FIXED_DT):
+		for k in sim.enemies.count:
+			sim.enemies.px[k] = ox[k]
+			sim.enemies.py[k] = oy[k]
+		sim.step(GameConfig.FIXED_DT, 0.0, 0.0)
+		var now := _w6hp(sim)
+		var d := prev - now
+		if d > 1.0:
+			bursts.append(d)
+		prev = now
+
+	var d1: float = bursts[0] if bursts.size() > 0 else 0.0
+	var d2: float = bursts[1] if bursts.size() > 1 else 0.0
+	var stacked: float = w.stacks
+	# 把木桩挪到天边，制造"停火"
+	for i in sim.enemies.count:
+		sim.enemies.px[i] = 99999.0
+	_w6run(sim, 3.0)
+	var after_idle: float = w.stacks
+	var ok: bool = d2 > d1 * 1.1 and stacked > 0.0 and after_idle == 0.0
+	print("  C 缓冲区溢出 · 首轮 %.0f → 次轮 %.0f · 层数 %.2f → 停火后 %.2f · %s" % [
+		d1, d2, stacked, after_idle, "OK" if ok else "FAIL"])
+
+
+## D 断点调试：范围内敌人被冻结，且冻结期间真的不移动
+static func _t_breakpoint() -> void:
+	var sim := _w6mk("breakpoint")
+	_w6ring(sim, 8, 80.0, 500.0, 60.0)
+	_w6run(sim, 0.05)
+	var frozen := 0
+	var x0 := sim.enemies.px[0]
+	for i in sim.enemies.count:
+		if sim.enemies.freeze[i] > 0.0:
+			frozen += 1
+	_w6run(sim, 0.5)
+	var moved: float = absf(sim.enemies.px[0] - x0)
+	print("  D 断点调试 · 冻结 %d/8 · 0.5 秒位移 %.2f px · %s" % [
+		frozen, moved, "OK" if frozen >= 8 and moved < 0.5 else "FAIL"])
+
+
+## E 永真力场：持续灼烧 + 持续自损；血低于 30% 必须自动停机
+static func _t_forever() -> void:
+	var sim := _w6mk("forever", false)     # 不开无敌，否则自损测不出来
+	_w6ring(sim, 8, 60.0, 99999.0)
+	var h0 := _w6hp(sim)
+	var p0 := sim.player_hp
+	_w6run(sim, 3.0)
+	var dealt := h0 - _w6hp(sim)
+	var lost := p0 - sim.player_hp
+	var running1 := sim.loadout.forever.running
+	# 安全阀：把血压到 20%
+	sim.player_hp = sim.max_hp * 0.2
+	_w6run(sim, 0.1)
+	var running2 := sim.loadout.forever.running
+	var p1 := sim.player_hp
+	_w6run(sim, 0.5)
+	var lost2 := p1 - sim.player_hp
+	var ok: bool = dealt > 100.0 and lost > 1.0 and running1 and not running2 and lost2 < 0.001
+	print("  E 永真力场 · 3 秒打出 %.0f · 自损 %.1f · 20%% 血时停机=%s 且不再掉血=%s · %s" % [
+		dealt, lost, "是" if not running2 else "否", "是" if lost2 < 0.001 else "否",
+		"OK" if ok else "FAIL"])
+
+
+## F 全量重编译：蓄力期间没有伤害，蓄满后一次性清场，击杀缩短冷却
+static func _t_rebuild() -> void:
+	var sim := _w6mk("rebuild")
+	_w6ring(sim, 20, 120.0, 150.0)        # 血量低于满级伤害，一炸即死
+	_w6run(sim, 0.3)                      # 蓄力 0.5s，此刻还没炸
+	var k1 := sim.kills
+	_w6run(sim, 0.5)
+	var k2 := sim.kills
+	var w = sim.loadout.rebuild
+	var ok: bool = k1 == 0 and k2 >= 20 and w.cooldown < w.cd_base * 0.95
+	print("  F 全量重编译 · 蓄力中击杀 %d → 引爆后 %d · 冷却 %.2f/%.1f · %s" % [
+		k1, k2, w.cooldown, w.cd_base, "OK" if ok else "FAIL"])
+
+
 static func run_opening() -> void:
 	var s1: Dictionary = UpgradeDefs.stats_for("whip", 1)
 	var reach: float = float(s1["reach"])

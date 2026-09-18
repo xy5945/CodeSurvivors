@@ -118,7 +118,7 @@ func _sector(sim, branch: int) -> void:
 		if dot * dot < GameConfig.WHIP_COS_SQ * d2:
 			continue
 
-		e.hp[i] -= damage
+		e.hp[i] -= damage * e.dmg_mult(i)
 		e.flash[i] = GameConfig.WHIP_FLASH
 		last_hit_count += 1
 		hits += 1

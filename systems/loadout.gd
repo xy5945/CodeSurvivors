@@ -15,6 +15,11 @@ extends RefCounted
 # 未持有分支长鞭时为 null，读取方需自行判空。
 var whip: WhipWeapon
 var orbit: OrbitWeapon
+# 需要常驻视觉的武器（光环 / 蓄力环）由 AuraRenderer 直接读，
+# 走具名引用而不是在 weapons 里遍历 —— 渲染每帧都要拿，别做字符串查找。
+var forever: ForeverWeapon
+var buffer: BufferWeapon
+var rebuild: RebuildWeapon
 
 var weapons := []       # 所有已获得的武器实例，sim 每帧遍历它
 var weapon_map := {}    # id -> 实例
@@ -94,6 +99,12 @@ func recompute() -> void:
 				whip = w
 			elif id == "orbit":
 				orbit = w
+			elif id == "forever":
+				forever = w
+			elif id == "buffer":
+				buffer = w
+			elif id == "rebuild":
+				rebuild = w
 
 		w.apply_stats(lv, self)
 
@@ -112,6 +123,18 @@ func _make_weapon(id: String):
 			return BladeWeapon.new()
 		"pointer":
 			return PointerWeapon.new()
+		"volley":
+			return VolleyWeapon.new()
+		"gc":
+			return GcWeapon.new()
+		"buffer":
+			return BufferWeapon.new()
+		"breakpoint":
+			return BreakpointWeapon.new()
+		"forever":
+			return ForeverWeapon.new()
+		"rebuild":
+			return RebuildWeapon.new()
 	return null
 
 
