@@ -19,6 +19,8 @@ var damage := 0.0
 var radius := 0.0
 var spin := 0.0
 var hit_cd := 0.0
+var evolved := false    # 嵌套循环：内外双层反向环
+var draw_count := 0     # 渲染层要画的环绕物总数（进化后是 count 的两倍）
 
 # 运行时状态
 var angle := 0.0
@@ -39,6 +41,13 @@ func apply_stats(level: int, lo: Loadout) -> void:
 	spin = float(s["spin"])
 	hit_cd = float(s["hit_cd"])
 	enabled = true
+	evolved = lo.is_evolved("orbit")
+	# 嵌套循环：外圈照旧，内圈半径 62%、反向转得更快、伤害 60%。
+	# 内圈不是白送的伤害 —— 它转得快所以命中更频繁，但每次更弱，
+	# 净效果是"贴身的敌人被磨得更快"，而不是整体 DPS 翻倍。
+	# 环绕物上限 12 个：count 满级 6 → 双层正好 12，ox/oy 装得下。
+	draw_count = count * (2 if evolved else 1)
+	draw_count = mini(draw_count, MAX_ORBITERS)
 
 
 func update(dt: float, sim) -> void:
@@ -56,10 +65,19 @@ func update(dt: float, sim) -> void:
 	var r2 := hit_r * hit_r
 
 	var i := 0
-	while i < count:
-		var a := angle + i * step
-		var x: float = sim.player_x + cos(a) * radius
-		var y: float = sim.player_y + sin(a) * radius
+	while i < draw_count:
+		# 前 count 个是外圈（正向），后 count 个是内圈（反向、更快、更弱）
+		var inner := i >= count
+		var slot := i - count if inner else i
+		var a := angle + slot * step
+		var rr := radius
+		var dmg := damage
+		if inner:
+			a = -angle * 1.6 + slot * step
+			rr = radius * 0.62
+			dmg = damage * 0.6
+		var x: float = sim.player_x + cos(a) * rr
+		var y: float = sim.player_y + sin(a) * rr
 		ox[i] = x
 		oy[i] = y
 
@@ -74,7 +92,7 @@ func update(dt: float, sim) -> void:
 			var dy: float = e.py[j] - y
 			if dx * dx + dy * dy > r2:
 				continue
-			e.hp[j] -= damage * e.dmg_mult(j)
+			e.hp[j] -= dmg * e.dmg_mult(j)
 			e.flash[j] = GameConfig.ORBIT_FLASH
 			e.orb_cd[j] = hit_cd
 

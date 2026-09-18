@@ -231,6 +231,14 @@ func heal_player(v: float) -> void:
 ## 注意：加"生命上限"时同时补等量血 —— 否则玩家点了加血却看不到血条变化，
 ## 会觉得这个选项没用（这是幸存者类游戏的通用做法）。
 func apply_upgrade(id: String) -> void:
+	# 进化不吃等级、不改数值表，只是把武器换一种行为
+	if EvolveDefs.is_evo_id(id):
+		loadout.apply_evolution(id)
+		card_events.append(id)
+		if pending_levelups > 0:
+			pending_levelups -= 1
+		return
+
 	var before := max_hp
 	loadout.apply_upgrade(id)
 	_refresh_max_hp()
@@ -606,6 +614,11 @@ func _reap() -> void:
 	while i >= 0:
 		if e.hp[i] <= 0.0:
 			var ti := e.type[i]
+			# 断言（断点调试进化）：被冻住的敌人死掉时把周围一起冻住。
+			# 必须在 e.kill(i) 之前读 freeze —— kill 会把它清掉。
+			if loadout.breakpoint_w != null and loadout.breakpoint_w.evolved:
+				if e.freeze[i] > 0.0:
+					loadout.breakpoint_w.chain_on_death(self, e.px[i], e.py[i], e.freeze[i])
 			# 经验按类型给：精英 20 点、大怪 3~4 点，杂兵 1 点。
 			# 掉落价值必须跟"杀它花的功夫"成正比，否则玩家没有打精英的动力。
 			gems.spawn(e.px[i], e.py[i], EnemyDB.DEFS[ti].xp)

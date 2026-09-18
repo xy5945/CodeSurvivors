@@ -19,6 +19,7 @@ var bolt_count := 1
 var pspeed := 0.0
 var pierce := 0
 var apply_mark := false
+var evolved := false    # 引用计数：命中后分裂成两发
 
 var cooldown := 0.0
 
@@ -42,6 +43,7 @@ func apply_stats(level: int, lo: Loadout) -> void:
 	pierce = int(s["pierce"])
 	apply_mark = bool(s["mark"])
 	enabled = true
+	evolved = lo.is_evolved("pointer")
 
 
 func update(dt: float, sim) -> void:
@@ -112,6 +114,7 @@ func _fire(sim) -> void:
 		sim.projectiles.spawn_pointer(
 			sim.player_x, sim.player_y,
 			rx * pspeed, ry * pspeed,
-			damage, seek_r, pierce, apply_mark
+			damage, seek_r, pierce, apply_mark,
+			1 if evolved else 0
 		)
 		i += 1

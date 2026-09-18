@@ -21,8 +21,11 @@ var cd_base := 0.0
 var bolt_count := 1
 var pspeed := 0.0
 var pierce := 0
+var evolved := false    # 线程池：两轮点射
 
 var cooldown := 0.0
+var fired_total := 0    # 本局开火轮数（测试用：线程池一轮变两轮）
+var _second := 0.0      # 第二轮点射的倒计时（线程池）
 
 # 复用数组：齐射是低频操作（每 0.7~1.1 秒一次），但每次要找 7 个目标，
 # 每次都新建数组的话一局下来会产生上万个临时对象。
@@ -43,11 +46,29 @@ func apply_stats(level: int, lo: Loadout) -> void:
 	pspeed = float(s["pspeed"])
 	pierce = int(s["pierce"])
 	enabled = true
+	evolved = lo.is_evolved("volley")
 
 
 func update(dt: float, sim) -> void:
 	if not enabled:
 		return
+	# 线程池：第一轮打完 0.18 秒再打第二轮，**重新锁定**当前的目标。
+	# 重新锁定是关键 —— 同一个目标列表打两遍只是伤害翻倍（那是数值），
+	# 重打一次目标才意味着"第二批线程接着处理新来的任务"。
+	if _second > 0.0:
+		_second -= dt
+		# 冷却照走：等第二轮的那 0.18 秒不该白等，
+		# 否则"一轮两射"实际变成"一轮变慢"，线程池就名不副实了。
+		cooldown -= dt
+		if _second <= 0.0:
+			_second = 0.0
+			var m: int = mini(bolt_count, MAX_BOLTS)
+			if _pick_targets(sim, m) > 0:
+				sim.sfx_events.append("shoot")
+				fired_total += 1
+				_fire(sim, m)
+		return
+
 	cooldown -= dt
 	if cooldown > 0.0:
 		return
@@ -60,7 +81,10 @@ func update(dt: float, sim) -> void:
 
 	cooldown = cd_base
 	sim.sfx_events.append("shoot")
+	fired_total += 1
 	_fire(sim, n)
+	if evolved:
+		_second = 0.18
 
 
 ## 选出 n 个（尽量互不相同）的目标，返回找到的数量。

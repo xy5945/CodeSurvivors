@@ -36,11 +36,13 @@ func sync(orb) -> void:
 			s.visible = false
 		return
 
+	# 进化（嵌套循环）后是双层：渲染数量由 draw_count 给，不再是 count
+	var shown: int = orb.draw_count if orb.draw_count > 0 else orb.count
 	var frame := int(_anim_time * ANIM_FPS) % FRAME_COUNT
 	var i := 0
 	while i < MAX_ORBITERS:
 		var s := _sprites[i]
-		if i >= orb.count:
+		if i >= shown:
 			s.visible = false
 		else:
 			s.visible = true

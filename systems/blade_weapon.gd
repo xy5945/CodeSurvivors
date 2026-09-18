@@ -17,6 +17,7 @@ var proj_speed := 0.0
 var bounces := 0
 var decay := 1.0
 var spd_bonus := 0.0
+var evolved := false    # 尾递归：弹射不衰减、次数 +3
 
 var cooldown := 0.0
 
@@ -30,6 +31,13 @@ func apply_stats(level: int, lo: Loadout) -> void:
 	decay = float(s["decay"])
 	spd_bonus = float(s["spd_bonus"])
 	enabled = true
+	evolved = lo.is_evolved("blade")
+	if evolved:
+		# 尾递归：每次弹射不再衰减（decay = 1），弹射次数 +3。
+		# 普通递归越递归越弱，是"栈要一层层还回去"的代价；
+		# 尾递归没有这个代价，所以能一直递归下去 —— 数值上就是不再衰减。
+		decay = 1.0
+		bounces += 3
 
 
 func update(dt: float, sim) -> void:

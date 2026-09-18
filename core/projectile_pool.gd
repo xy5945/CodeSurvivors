@@ -82,7 +82,7 @@ func spawn_blade(x: float, y: float, vel_x: float, vel_y: float, damage: float,
 
 
 func spawn_pointer(x: float, y: float, vel_x: float, vel_y: float, damage: float,
-		seek_r: float, pierce_v: int, mark_v: bool) -> bool:
+		seek_r: float, pierce_v: int, mark_v: bool, split_v: int = 0) -> bool:
 	if count >= px.size():
 		return false
 	px[count] = x
@@ -98,7 +98,9 @@ func spawn_pointer(x: float, y: float, vel_x: float, vel_y: float, damage: float
 	ang[count] = atan2(vel_y, vel_x)
 	cd[count] = 0.0
 	kind[count] = KIND_POINTER
-	bounces[count] = 0
+	# 引用计数（指针进化）：借用 bounces 记"还能分裂几次"。
+	# 指针本来不用这个字段（它是飞刃的弹射次数），不新增字段就够用。
+	bounces[count] = split_v
 	pierce[count] = pierce_v
 	mark[count] = 1 if mark_v else 0
 	count += 1

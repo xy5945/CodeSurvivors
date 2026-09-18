@@ -24,6 +24,7 @@ var radius := 0.0
 var damage := 0.0       # 回收时附带的范围伤害（L1~L3 为 0）
 var hit_cap := 0
 var reset_n := 0        # 每回收这么多个，冷却立即重置（L8）
+var evolved := false    # 全量回收：不再限范围
 
 var cooldown := 0.0
 var recycled_total := 0   # 本局累计回收数（结算与测试用）
@@ -40,6 +41,7 @@ func apply_stats(level: int, lo: Loadout) -> void:
 	hit_cap = int(s["hit_cap"])
 	reset_n = int(s["reset_n"])
 	enabled = true
+	evolved = lo.is_evolved("gc")
 
 
 func update(dt: float, sim) -> void:
@@ -56,9 +58,15 @@ func _sweep(sim) -> void:
 	var e: EnemyPool = sim.enemies
 	var cx: float = sim.player_x
 	var cy: float = sim.player_y
+	# 全量回收（进化）：回收判定不再限范围，全场残血一起清。
+	# 只有**伤害**还留在身边 —— 否则它变成"全屏持续输出"，
+	# 那是另一把武器（全量重编译）的活，不能抢。
+	# 查询半径必须给到整个场地：网格查询只返回以玩家为心的候选，
+	# 半径小了远处的残血根本进不来。
+	var sweep_r: float = GameConfig.ARENA_HALF * 2.0 if evolved else radius
 	var r2 := radius * radius
 
-	var n: int = sim.grid.query(cx, cy, radius, hit_cap)
+	var n: int = sim.grid.query(cx, cy, sweep_r)
 	var hits := 0
 	var recycled := 0
 	var k := 0
@@ -67,7 +75,9 @@ func _sweep(sim) -> void:
 		k += 1
 		var dx := e.px[j] - cx
 		var dy := e.py[j] - cy
-		if dx * dx + dy * dy > r2:
+		var d2 := dx * dx + dy * dy
+		var in_dmg := d2 <= r2
+		if not in_dmg and not evolved:
 			continue
 
 		# hp_max 可能是 0（不该发生，但除零会让阈值判定变成 NaN），兜一下
@@ -75,7 +85,7 @@ func _sweep(sim) -> void:
 		if frac <= thr:
 			e.hp[j] = 0.0      # 直接回收；掉落与击杀由 _reap 处理
 			recycled += 1
-		elif damage > 0.0:
+		elif damage > 0.0 and in_dmg:
 			e.hp[j] -= damage * e.dmg_mult(j)
 		e.flash[j] = FLASH
 		hits += 1

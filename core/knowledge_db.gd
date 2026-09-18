@@ -23,8 +23,9 @@ const K_WEAPON := 0
 const K_PASSIVE := 1
 const K_ENEMY := 2
 const K_SYSTEM := 3
+const K_EVOLUTION := 4
 
-const KIND_NAMES := ["武 器", "被 动", "Bug 与异常", "编程基础"]
+const KIND_NAMES := ["武 器", "被 动", "Bug 与异常", "编程基础", "进 化"]
 
 const CARDS := [
 	# ================= 武器（6）=================
@@ -190,6 +191,70 @@ const CARDS := [
 		"plain": "别人写好的工具，拿过来就能用",
 		"use": "想画图、想联网，先看看有没有现成的库",
 	},
+	# ================= 进化（12）=================
+	# 进化卡讲的是"同一个概念再往前走一步"：三元表达式是 if 的简写、
+	# 尾递归是递归的优化、增量编译是全量编译的优化。
+	# 它们只在玩家真的完成进化时才弹 —— 正好是"刚用上"的那一刻。
+	{
+		"id": "evo_whip", "kind": K_EVOLUTION, "term": "三元运算符", "code": "a ? b : c",
+		"plain": "一句话写完一个二选一",
+		"use": "只想挑一个值时，比 if 短很多",
+	},
+	{
+		"id": "evo_orbit", "kind": K_EVOLUTION, "term": "嵌套循环", "code": "for { for {",
+		"plain": "循环里面再套一层循环",
+		"use": "打印九九乘法表就要两层循环",
+	},
+	{
+		"id": "evo_broadcast", "kind": K_EVOLUTION, "term": "事件", "code": "on(...)",
+		"plain": "你喊一声，关心的人自己动",
+		"use": "点按钮、收消息，都是事件在传话",
+	},
+	{
+		"id": "evo_judgment", "kind": K_EVOLUTION, "term": "随机种子", "code": "srand(1)",
+		"plain": "同一个种子，随机数一模一样",
+		"use": "想让随机结果能重现，就定种子",
+	},
+	{
+		"id": "evo_blade", "kind": K_EVOLUTION, "term": "尾递归", "code": "return f()",
+		"plain": "最后一步才调用自己，不压栈",
+		"use": "递归太深会卡住，改成尾递归就好",
+	},
+	{
+		"id": "evo_pointer", "kind": K_EVOLUTION, "term": "引用计数", "code": "shared_ptr",
+		"plain": "数着还有几个人在用，没人用就丢",
+		"use": "自动帮你在不用时把内存还回去",
+	},
+	{
+		"id": "evo_volley", "kind": K_EVOLUTION, "term": "线程池", "code": "thread pool",
+		"plain": "先备好几个工人，来了活就派",
+		"use": "活多又碎时，比每次新开线程快",
+	},
+	{
+		"id": "evo_gc", "kind": K_EVOLUTION, "term": "全量回收", "code": "gc -F",
+		"plain": "把整个房间彻底扫一遍",
+		"use": "卡顿时做一次全量回收，能清干净",
+	},
+	{
+		"id": "evo_buffer", "kind": K_EVOLUTION, "term": "环形缓冲", "code": "ring buffer",
+		"plain": "写到头就从开头接着写",
+		"use": "录音、弹幕这种连续数据都用它",
+	},
+	{
+		"id": "evo_breakpoint", "kind": K_EVOLUTION, "term": "断言", "code": "assert()",
+		"plain": "先声明「这里必须对」，不对就停",
+		"use": "找 bug 时先把假设写死，错就报错",
+	},
+	{
+		"id": "evo_forever", "kind": K_EVOLUTION, "term": "守护进程", "code": "daemon",
+		"plain": "一直在后台跑，关不掉的服务",
+		"use": "网站服务器就是一直在跑的守护进程",
+	},
+	{
+		"id": "evo_rebuild", "kind": K_EVOLUTION, "term": "增量编译", "code": "make",
+		"plain": "只重新编译改过的那几个文件",
+		"use": "大项目改一行不用等全部重新编",
+	},
 ]
 
 
@@ -226,6 +291,9 @@ static func missing_cards() -> Array[String]:
 	for d in EnemyDB.DEFS:
 		if not has_card(str(d["id"])):
 			out.append(str(d["id"]))
+	for e in EvolveDefs.EVOLUTIONS:
+		if not has_card(str(e["id"])):
+			out.append(str(e["id"]))
 	return out
 
 

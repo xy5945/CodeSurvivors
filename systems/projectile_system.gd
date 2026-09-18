@@ -94,6 +94,14 @@ func _collide(i: int, sim, p: ProjectilePool, e: EnemyPool, g: SpatialGrid) -> b
 
 		# 指针追踪：满级可穿透 1 个目标，但要留命中冷却，
 		# 否则同一敌人会在连续帧里被同一发子弹反复结算
+		#
+		# 引用计数（指针进化）：命中后分裂成两发，各自继续追下一个目标。
+		# 分裂出来的两发 split=0，所以只会裂一次 —— 允许再裂就是 2^n，
+		# 一发弹能把屏幕清空，那是失控不是进化。
+		if p.kind[i] == ProjectilePool.KIND_POINTER and p.bounces[i] > 0:
+			_split_pointer(i, sim, p, e, g, j)
+			return true
+
 		if p.pierce[i] > 0:
 			p.pierce[i] -= 1
 			p.cd[i] = GameConfig.PROJ_HIT_CD
@@ -101,6 +109,23 @@ func _collide(i: int, sim, p: ProjectilePool, e: EnemyPool, g: SpatialGrid) -> b
 		return true
 
 	return false
+
+
+## 引用计数（指针进化）：一发变两发，朝左右各偏 25° 飞出去，
+## 之后由 _homing 各自重新锁定目标 —— 所以它们会奔向不同的敌人。
+func _split_pointer(i: int, sim, p: ProjectilePool, e: EnemyPool,
+		g: SpatialGrid, hit_j: int) -> void:
+	var spd := sqrt(p.vx[i] * p.vx[i] + p.vy[i] * p.vy[i])
+	var base_a := atan2(p.vy[i], p.vx[i])
+	var dmg := p.dmg[i] * 0.6
+
+	for k in 2:
+		var a := base_a + (-1.0 if k == 0 else 1.0) * 0.44
+		p.spawn_pointer(
+			p.px[i], p.py[i],
+			cos(a) * spd, sin(a) * spd,
+			dmg, p.seek[i], 0, p.mark[i] == 1, 0
+		)
 
 
 ## 递归：命中后分裂出一个更弱的自己，朝下一个最近目标飞去。

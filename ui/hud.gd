@@ -159,7 +159,8 @@ func _build_text(sim: Sim) -> String:
 	for u in UpgradeDefs.UPGRADES:
 		var lv := sim.loadout.level_of(u["id"])
 		if lv > 0:
-			parts.append("%s%d" % [u["icon"], lv])
+			var star := "★" if sim.loadout.is_evolved(str(u["id"])) else ""
+			parts.append("%s%d%s" % [u["icon"], lv, star])
 	return "  ".join(parts) if parts.size() > 0 else "WASD 移动 · 朝向即攻击方向 · M 静音"
 
 

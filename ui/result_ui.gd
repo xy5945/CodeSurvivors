@@ -110,7 +110,9 @@ func _build_text(sim: Sim) -> String:
 	for u in UpgradeDefs.UPGRADES:
 		var lv := sim.loadout.level_of(str(u["id"]))
 		if lv > 0:
-			parts.append("%s Lv%d" % [u["name"], lv])
+			# 进化过的标一颗 ★ —— 这是这局最难达成的东西，结算里必须看得见
+			var star := "★" if sim.loadout.is_evolved(str(u["id"])) else ""
+			parts.append("%s%s Lv%d" % [u["name"], star, lv])
 	if parts.is_empty():
 		return "Build：无（没拿到任何升级）"
 	return "Build：" + "   ".join(parts)

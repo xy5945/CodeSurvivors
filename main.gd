@@ -207,6 +207,12 @@ func _ready() -> void:
 			get_tree().quit()
 			return
 
+	if OS.get_cmdline_user_args().has("--evotest"):
+		set_process(false)
+		Bench.run_evo()
+		get_tree().quit()
+		return
+
 	if OS.get_cmdline_user_args().has("--wpn6test"):
 		set_process(false)
 		Bench.run_wpn6()
@@ -232,10 +238,19 @@ func _ready() -> void:
 		for a in OS.get_cmdline_user_args():
 			if a.begins_with("--give="):
 				var gid := a.substr(7)
-				for u in UpgradeDefs.UPGRADES:
-					if str(u["id"]) == gid:
-						sim.loadout.levels[gid] = int(u["max"])
+				if EvolveDefs.is_evo_id(gid):
+					# 直接给进化：进化要先把武器/被动刷满，手点太慢
+					var ed := EvolveDefs.def_of(gid)
+					if not ed.is_empty():
+						sim.loadout.levels[str(ed["base"])] = 							int(UpgradeDefs.def_of(str(ed["base"]))["max"])
+						sim.loadout.levels[str(ed["passive"])] = 							int(UpgradeDefs.def_of(str(ed["passive"]))["max"])
+				else:
+					for u in UpgradeDefs.UPGRADES:
+						if str(u["id"]) == gid:
+							sim.loadout.levels[gid] = int(u["max"])
 				sim.loadout.recompute()
+				if EvolveDefs.is_evo_id(gid):
+					sim.loadout.apply_evolution(gid)
 		# --spawn=<敌人id>：在玩家周围摆一圈指定敌人，配合 --shot 验证美术
 		for a in OS.get_cmdline_user_args():
 			if a.begins_with("--spawn="):

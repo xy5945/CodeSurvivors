@@ -29,6 +29,8 @@ var charging := false
 var charge_left := 0.0
 var fired_total := 0    # 本局引爆次数
 var kills_total := 0    # 本局由爆炸直接造成的击杀
+var evolved := false    # 增量编译：一轮两炸
+var _chained := false   # 本轮是否已经追加过第二发
 
 
 func apply_stats(level: int, lo: Loadout) -> void:
@@ -40,6 +42,7 @@ func apply_stats(level: int, lo: Loadout) -> void:
 	hit_cap = int(s["hit_cap"])
 	cd_kill = float(s["cd_kill"])
 	enabled = true
+	evolved = lo.is_evolved("rebuild")
 
 
 func update(dt: float, sim) -> void:
@@ -76,6 +79,16 @@ func _detonate(sim) -> void:
 	kills_total += kills
 	sim.sfx_events.append("bolt")
 
+	# 增量编译（进化）：引爆后立刻追加一发，蓄力只要 60%。
+	# 一轮两炸，但每轮仍然只走一次冷却 —— 它换来的是"节奏变快"，
+	# 而不是"冷却砍半"。第二发打完后照样进冷却，所以不会滚成连发。
+	if evolved and not _chained:
+		_chained = true
+		charging = true
+		charge_left = charge_time * 0.6
+		return
+
+	_chained = false
 	cooldown = cd_base
 	if cd_kill > 0.0 and kills > 0:
 		# 连乘：剩余冷却 × (1-3%)^击杀数。永远不会归零，

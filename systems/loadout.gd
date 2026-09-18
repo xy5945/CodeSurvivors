@@ -20,12 +20,21 @@ var orbit: OrbitWeapon
 var forever: ForeverWeapon
 var buffer: BufferWeapon
 var rebuild: RebuildWeapon
+# 断言（断点调试进化）要在敌人死亡时连锁，死亡判定在 sim._reap，
+# 走具名引用最快 —— 那里每帧都可能被调到。
+# 注意：不能叫 breakpoint —— 那是 GDScript 的保留字（调试断点语句），
+# 用作变量名会报 "Expected variable name after var"。
+var breakpoint_w: BreakpointWeapon
 
 var weapons := []       # 所有已获得的武器实例，sim 每帧遍历它
 var weapon_map := {}    # id -> 实例
 
 # id -> 等级。0 或不存在 = 未持有。
 var levels := {}
+
+# 已完成的进化：武器 id -> true。不进 levels —— 进化不是"第 9 级"，
+# 它是换一种行为，混进 levels 会让"满级"和"命中上限"之类的判断全线出错。
+var evolved := {}
 
 # ---- 被动聚合结果（recompute 时统一算一次）----
 var max_hp_bonus := 0.0
@@ -48,6 +57,41 @@ func level_of(id: String) -> int:
 func apply_upgrade(id: String) -> void:
 	levels[id] = level_of(id) + 1
 	recompute()
+
+
+## 完成一次进化。进化不吃等级：它只是把武器换一种行为，
+## 数值（伤害/冷却）仍然走 8 级表的满级那一档。
+func apply_evolution(id: String) -> void:
+	var d := EvolveDefs.def_of(id)
+	if d.is_empty():
+		return
+	evolved[str(d["base"])] = true
+	recompute()
+
+
+func is_evolved(id: String) -> bool:
+	return bool(evolved.get(id, false))
+
+
+## 当前已满足解锁条件、但还没拿的进化。
+##
+## 条件：对应武器满级 + 指定被动满级。两者都是"满级"而不是"拿到就行"，
+## 是因为进化是这局最后的追求目标 —— 随便就能拿到的话，
+## 玩家在第 5 分钟就把 Build 定死了，后面 15 分钟没有期待。
+func available_evolutions() -> Array:
+	var out := []
+	for e in EvolveDefs.EVOLUTIONS:
+		var base := str(e["base"])
+		if is_evolved(base):
+			continue
+		var wd := UpgradeDefs.def_of(base)
+		var pd := UpgradeDefs.def_of(str(e["passive"]))
+		if level_of(base) < int(wd["max"]):
+			continue
+		if level_of(str(e["passive"])) < int(pd["max"]):
+			continue
+		out.append(e)
+	return out
 
 
 func recompute() -> void:
@@ -105,6 +149,8 @@ func recompute() -> void:
 				buffer = w
 			elif id == "rebuild":
 				rebuild = w
+			elif id == "breakpoint":
+				breakpoint_w = w
 
 		w.apply_stats(lv, self)
 
@@ -173,9 +219,18 @@ func roll_choices(n: int) -> Array:
 	pool.shuffle()
 
 	var out := []
-	for i in mini(n, pool.size()):
-		var d: Dictionary = pool[i]
-		out.append({"def": d, "level": level_of(d["id"]) + 1})
+
+	# 进化必占一席（最多一席，多条同时满足时随机取一条）。
+	# 不塞进池子里随机抽：玩家把武器和被动都刷满是很明确的投入，
+	# 结果还要靠运气才看得到进化卡，体验上等于"我白刷了"。
+	var evos := available_evolutions()
+	if not evos.is_empty():
+		out.append({"def": evos[randi() % evos.size()], "level": 1})
+
+	while out.size() < n and not pool.is_empty():
+		out.append({"def": pool[0], "level": level_of(str(pool[0]["id"])) + 1})
+		pool.remove_at(0)
+
 	while out.size() < n:
 		out.append({"def": UpgradeDefs.HEAL_PICK, "level": 1})
 	return out

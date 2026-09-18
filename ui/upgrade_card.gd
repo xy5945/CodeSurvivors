@@ -21,9 +21,15 @@ const C_LV := Color(0.35, 0.72, 0.95, 1.0)
 const BG := Color(0.09, 0.11, 0.16, 0.97)
 const BORDER := Color(0.22, 0.26, 0.36, 1.0)
 const BORDER_HOVER := Color(0.98, 0.86, 0.36, 1.0)
+# 进化卡：整张卡描金边，和普通升级卡一眼分开。
+# 它是这局最难拿到的东西（武器满级 + 被动满级），必须看起来"值得"。
+const BG_EVO := Color(0.16, 0.13, 0.06, 0.98)
+const BORDER_EVO := Color(1.0, 0.82, 0.30, 1.0)
+const C_LV_EVO := Color(1.0, 0.82, 0.30, 1.0)
 
 var def: Dictionary
 var target_level := 1
+var is_evo := false
 
 
 func _init() -> void:
@@ -34,6 +40,7 @@ func _init() -> void:
 func setup(d: Dictionary, lv: int) -> void:
 	def = d
 	target_level = lv
+	is_evo = EvolveDefs.is_evo_id(str(d.get("id", "")))
 	_build()
 
 
@@ -41,7 +48,7 @@ func _build() -> void:
 	for c in get_children():
 		c.queue_free()
 
-	_apply_style(BORDER)
+	_apply_style(BORDER_EVO if is_evo else BORDER)
 
 	var vb := VBoxContainer.new()
 	vb.set_anchors_preset(Control.PRESET_FULL_RECT)
@@ -65,10 +72,10 @@ func _build() -> void:
 	name_l.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	vb.add_child(name_l)
 
-	# 等级变化
+	# 等级变化（进化卡这里是"★ 进化"，因为它不吃等级）
 	var lv_l := Label.new()
-	lv_l.text = "新获得" if target_level == 1 else "Lv %d → %d" % [target_level - 1, target_level]
-	UiFont.apply(lv_l, 12, C_LV)
+	lv_l.text = "★ 进化" if is_evo else ("新获得" if target_level == 1 else "Lv %d → %d" % [target_level - 1, target_level])
+	UiFont.apply(lv_l, 12, C_LV_EVO if is_evo else C_LV)
 	lv_l.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	vb.add_child(lv_l)
 
@@ -100,9 +107,9 @@ func _spacer(h: int) -> Control:
 
 func _apply_style(border: Color) -> void:
 	var sb := StyleBoxFlat.new()
-	sb.bg_color = BG
+	sb.bg_color = BG_EVO if is_evo else BG
 	sb.border_color = border
-	sb.set_border_width_all(2)
+	sb.set_border_width_all(3 if is_evo else 2)
 	sb.set_corner_radius_all(6)
 	sb.content_margin_left = 8
 	sb.content_margin_right = 8
@@ -113,7 +120,7 @@ func _apply_style(border: Color) -> void:
 
 func _ready() -> void:
 	mouse_entered.connect(func() -> void: _apply_style(BORDER_HOVER))
-	mouse_exited.connect(func() -> void: _apply_style(BORDER))
+	mouse_exited.connect(func() -> void: _apply_style(BORDER_EVO if is_evo else BORDER))
 
 
 func _gui_input(event: InputEvent) -> void:

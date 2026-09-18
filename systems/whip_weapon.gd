@@ -30,6 +30,7 @@ var branches := 1
 var push := 0.0
 var heal := 0.0
 var hit_cap := 0        # 每条分支的命中上限（0 = 不限）
+var evolved := false    # 三元表达式：四向十字挥击
 
 # 运行时状态
 var cooldown := 0.0
@@ -47,6 +48,11 @@ func apply_stats(level: int, lo: Loadout) -> void:
 	push = float(s["push"])
 	heal = float(s["heal"])
 	enabled = true
+	evolved = lo.is_evolved("whip")
+	# 三元表达式：正面 + 反面 + 左右两侧 —— 四个方向都打，背后不再是死角。
+	# 这是"覆盖面"的质变：满级长鞭只有 3 个方向，玩家还是得转身找角度。
+	if evolved:
+		branches = 4
 
 
 func update(dt: float, sim) -> void:
@@ -83,9 +89,13 @@ func _sector(sim, branch: int) -> void:
 			fx = -fx
 			fy = -fy
 		2:
-			# 垂直方向：把朝向旋转 90°
+			# 垂直方向：把朝向旋转 +90°
 			fx = -sim.facing_y
 			fy = sim.facing_x
+		3:
+			# 三元表达式（进化）：补上 -90° 那一侧，凑成十字
+			fx = sim.facing_y
+			fy = -sim.facing_x
 
 	var e: EnemyPool = sim.enemies
 	var g: SpatialGrid = sim.grid

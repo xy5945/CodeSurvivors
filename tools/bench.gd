@@ -498,6 +498,295 @@ static func _t_rebuild() -> void:
 		k1, k2, w.cooldown, w.cd_base, "OK" if ok else "FAIL"])
 
 
+##
+## 进化系统自检。
+##
+## 进化改的是**行为**，所以每一条断言的都是"有没有换一种打法"，
+## 而不是伤害涨了多少 —— 后者是数值表的事，测它没意义。
+##
+## 运行：godot --headless --path . -- --evotest
+##
+static func run_evo() -> void:
+	print("")
+	print("=== 进化系统 · 机制测试 ===")
+	print("每条都跑两遍：未进化 vs 已进化，对比的是**行为差异**")
+	print("")
+	_t_evo_gate()
+	_t_evo_whip()
+	_t_evo_orbit()
+	_t_evo_broadcast()
+	_t_evo_judgment()
+	_t_evo_blade()
+	_t_evo_pointer()
+	_t_evo_volley()
+	_t_evo_gc()
+	_t_evo_buffer()
+	_t_evo_breakpoint()
+	_t_evo_forever()
+	_t_evo_rebuild()
+	print("")
+
+
+## 建一把满级武器 + 指定满级被动，可选是否完成进化
+static func _evomk(wid: String, passive: String = "", evolved: bool = true,
+		god: bool = true) -> Sim:
+	var sim := _w6mk(wid, god)
+	if passive != "":
+		sim.loadout.levels[passive] = 5
+		sim.loadout.recompute()
+	if evolved:
+		sim.loadout.apply_evolution("evo_" + wid)
+	return sim
+
+
+static func _evo_ok(ok: bool) -> String:
+	return "OK" if ok else "FAIL"
+
+
+## 跑一段并取某个数量的**峰值**。
+## 短命的东西（子波、追踪弹）在固定时刻采样经常已经消失了，
+## 只看最后一帧会误判成"没生成"，所以这里按帧取最大值。
+static func _evo_peak(sim, seconds: float, f: Callable) -> int:
+	var peak := 0
+	var steps := int(seconds / GameConfig.FIXED_DT)
+	for i in steps:
+		sim.step(GameConfig.FIXED_DT, 0.0, 0.0)
+		peak = maxi(peak, int(f.call()))
+	return peak
+
+
+## 门槛：武器满级 + 被动满级才出现；拿过之后不再重复出现
+static func _t_evo_gate() -> void:
+	var sim := _w6mk("whip")
+	sim.loadout.levels["optimize"] = 4      # 被动还差一级
+	var a := sim.loadout.available_evolutions().size()
+	sim.loadout.levels["optimize"] = 5
+	var b := sim.loadout.available_evolutions().size()
+	var got := false
+	for e in sim.loadout.available_evolutions():
+		if str(e["id"]) == "evo_whip":
+			got = true
+	# 三选一里必须占一席
+	var choices := sim.loadout.roll_choices(3)
+	var in_roll := false
+	for ch in choices:
+		if str(ch["def"]["id"]).begins_with("evo_"):
+			in_roll = true
+	sim.loadout.apply_evolution("evo_whip")
+	var c := sim.loadout.available_evolutions().size()
+	var ok: bool = a == 0 and b == 1 and got and in_roll and c == 0
+	print("  0 门槛 · 被动Lv4=%d条 → Lv5=%d条(含evo_whip=%s, 进三选一=%s) → 拿过=%d条 · %s" % [
+		a, b, "是" if got else "否", "是" if in_roll else "否", c, _evo_ok(ok)])
+
+
+## 1 三元表达式：四个方向都打（未进化只有 3 个方向，上方是死角）
+static func _t_evo_whip() -> void:
+	var hurt_plain := 0
+	var hurt_evo := 0
+	for evo in [false, true]:
+		var sim := _evomk("whip", "optimize", evo)
+		# 上下左右各一个木桩
+		for d in [Vector2(70, 0), Vector2(-70, 0), Vector2(0, 70), Vector2(0, -70)]:
+			sim.enemies.spawn(sim.player_x + d.x, sim.player_y + d.y, 1000.0, 0.0, 10.0, 0)
+		_w6run(sim, 0.3)
+		var n := 0
+		for i in sim.enemies.count:
+			if sim.enemies.hp[i] < 1000.0:
+				n += 1
+		if evo:
+			hurt_evo = n
+		else:
+			hurt_plain = n
+	print("  1 三元表达式 · 四向木桩命中 %d → %d · %s" % [
+		hurt_plain, hurt_evo, _evo_ok(hurt_plain == 3 and hurt_evo == 4)])
+
+
+## 2 嵌套循环：环绕物变双层，内圈更近
+static func _t_evo_orbit() -> void:
+	var sim := _evomk("orbit", "overclock", true)
+	var w = sim.loadout.orbit
+	_w6run(sim, 0.2)
+	var inner_d: float = Vector2(w.ox[w.count] - sim.player_x, w.oy[w.count] - sim.player_y).length()
+	var outer_d: float = Vector2(w.ox[0] - sim.player_x, w.oy[0] - sim.player_y).length()
+	var ok: bool = w.draw_count == w.count * 2 and inner_d < outer_d * 0.8
+	print("  2 嵌套循环 · 环绕物 %d → %d · 内圈半径 %.0f/外圈 %.0f · %s" % [
+		w.count, w.draw_count, inner_d, outer_d, _evo_ok(ok)])
+
+
+## 3 事件总线：主波扫完后再冒出子波（未进化的波扫完就没了）
+static func _t_evo_broadcast() -> void:
+	var sub_plain := 0
+	var sub_evo := 0
+	for evo in [false, true]:
+		var sim := _evomk("broadcast", "ptr", evo)
+		_w6ring(sim, 8, 100.0, 1000.0)
+		var peak := _evo_peak(sim, 1.2, func() -> int: return sim.fx.waves.size())
+		if evo:
+			sub_evo = peak
+		else:
+			sub_plain = peak
+	print("  3 事件总线 · 同时存在的波峰值 %d → %d（主波+子波）· %s" % [
+		sub_plain, sub_evo, _evo_ok(sub_plain <= 1 and sub_evo >= 2)])
+
+
+## 4 随机种子：一次冷却打出 3 倍数量的落雷
+static func _t_evo_judgment() -> void:
+	var n_plain := 0
+	var n_evo := 0
+	for evo in [false, true]:
+		var sim := _evomk("judgment", "optimize", evo)
+		_w6ring(sim, 8, 100.0, 1000.0)
+		_w6run(sim, 0.05)
+		if evo:
+			n_evo = sim.fx.bolts.size()
+		else:
+			n_plain = sim.fx.bolts.size()
+	print("  4 随机种子 · 单波落雷 %d → %d 道 · %s" % [
+		n_plain, n_evo, _evo_ok(n_plain >= 1 and n_evo == n_plain * 3)])
+
+
+## 5 尾递归：弹射不再衰减、次数 +3
+static func _t_evo_blade() -> void:
+	var sim0 := _evomk("blade", "thread", false)
+	var sim1 := _evomk("blade", "thread", true)
+	var w0 = sim0.loadout.weapon_map["blade"]
+	var w1 = sim1.loadout.weapon_map["blade"]
+	var ok: bool = w0.decay < 1.0 and w1.decay == 1.0 and w1.bounces == w0.bounces + 3
+	print("  5 尾递归 · 衰减 %.2f→%.2f · 弹射 %d→%d · %s" % [
+		w0.decay, w1.decay, w0.bounces, w1.bounces, _evo_ok(ok)])
+
+
+## 6 引用计数：命中后一发变两发
+static func _t_evo_pointer() -> void:
+	var n_plain := 0
+	var n_evo := 0
+	for evo in [false, true]:
+		var sim := _evomk("pointer", "ptr", evo)
+		_w6ring(sim, 3, 90.0, 1000.0)
+		var peak := _evo_peak(sim, 1.2, func() -> int: return sim.projectiles.count)
+		if evo:
+			n_evo = peak
+		else:
+			n_plain = peak
+	print("  6 引用计数 · 场上追踪弹峰值 %d → %d · %s" % [
+		n_plain, n_evo, _evo_ok(n_evo > n_plain)])
+
+
+## 7 线程池：一次冷却打两轮点射
+static func _t_evo_volley() -> void:
+	var n_plain := 0
+	var n_evo := 0
+	for evo in [false, true]:
+		var sim := _evomk("volley", "thread", evo)
+		_w6ring(sim, 8, 130.0, 9999.0)
+		_w6run(sim, 3.0)
+		var shots: int = sim.loadout.weapon_map["volley"].fired_total
+		if evo:
+			n_evo = shots
+		else:
+			n_plain = shots
+	print("  7 线程池 · 3 秒内开火 %d → %d 轮 · %s" % [
+		n_plain, n_evo, _evo_ok(n_evo >= n_plain * 2 - 1)])
+
+
+## 8 全量回收：远处（远超半径）的残血也会被清掉
+static func _t_evo_gc() -> void:
+	var left_plain := 0
+	var left_evo := 0
+	for evo in [false, true]:
+		var sim := _evomk("gc", "optimize", evo)
+		var r: float = sim.loadout.weapon_map["gc"].radius
+		# 近处一个、远处一个（远超半径），都是残血
+		sim.enemies.spawn(sim.player_x + r * 0.5, sim.player_y, 1000.0, 0.0, 10.0, 0)
+		sim.enemies.spawn(sim.player_x + r * 4.0, sim.player_y, 1000.0, 0.0, 10.0, 0)
+		sim.enemies.hp[0] = 30.0
+		sim.enemies.hp[1] = 30.0
+		_w6run(sim, 0.1)
+		if evo:
+			left_evo = sim.enemies.count
+		else:
+			left_plain = sim.enemies.count
+	var ok: bool = left_plain == 1 and left_evo == 0
+	print("  8 全量回收 · 一近一远残血，扫完剩 %d → %d 个 · %s" % [
+		left_plain, left_evo, _evo_ok(ok)])
+
+
+## 9 环形缓冲：停火后层数不再清零
+static func _t_evo_buffer() -> void:
+	var s_plain := 0.0
+	var s_evo := 0.0
+	for evo in [false, true]:
+		var sim := _evomk("buffer", "overclock", evo)
+		_w6ring(sim, 8, 60.0, 9999.0)
+		_w6run(sim, 4.0)              # 叠层
+		sim.enemies.clear()           # 停火
+		_w6run(sim, 3.0)              # 超过 2.5 秒的清空阈值
+		if evo:
+			s_evo = sim.loadout.weapon_map["buffer"].stacks
+		else:
+			s_plain = sim.loadout.weapon_map["buffer"].stacks
+	print("  9 环形缓冲 · 停火 3 秒后层数 %.2f → %.2f · %s" % [
+		s_plain, s_evo, _evo_ok(s_plain < 0.01 and s_evo > 0.5)])
+
+
+## 10 断言：被冻结的敌人死亡时，把武器范围外的敌人也一起冻住
+static func _t_evo_breakpoint() -> void:
+	var sim := _evomk("breakpoint", "malloc", true)
+	var w = sim.loadout.breakpoint_w
+	var r: float = w.radius
+	# A 在冻结范围内、一击就死；B 在范围外，只有靠 A 死掉的连锁才够得着
+	sim.enemies.spawn(sim.player_x + r * 0.6, sim.player_y, 1.0, 0.0, 10.0, 0)
+	sim.enemies.spawn(sim.player_x + r * 1.15, sim.player_y, 9999.0, 0.0, 10.0, 0)
+	# 冻结会随时间衰减，跑到末尾再采样一定已经解冻了 —— 必须按帧取峰值。
+	var peak := _evo_peak(sim, 4.0, func() -> int:
+		for i in sim.enemies.count:
+			if absf(sim.enemies.px[i] - sim.player_x) > r * 1.05:
+				return 1 if sim.enemies.freeze[i] > 0.0 else 0
+		return 0)
+	var b_frozen := peak == 1
+	print(" 10 断言 · 范围外敌人被连锁冻住=%s · %s" % [
+		"是" if b_frozen else "否", _evo_ok(b_frozen)])
+
+
+## 11 守护进程：残血不再停机，改为输出与自损一起减半
+static func _t_evo_forever() -> void:
+	var res := []
+	for evo in [false, true]:
+		var sim := _evomk("forever", "malloc", evo, false)
+		_w6ring(sim, 8, 110.0, 99999.0)      # 在半径(140)内，但远到不会贴脸吃接触伤害
+		var h0 := _w6hp(sim)
+		sim.player_hp = sim.max_hp * 0.2       # 残血：原版会停机
+		var p0 := sim.player_hp
+		_w6run(sim, 2.0)
+		res.append({
+			"running": sim.loadout.forever.running,
+			"dealt": h0 - _w6hp(sim),
+			"lost": p0 - sim.player_hp,
+		})
+	var ok: bool = (not res[0]["running"]) and res[0]["dealt"] < 1.0 \
+		and res[1]["running"] and res[1]["dealt"] > 50.0 and res[1]["lost"] > 0.0
+	print(" 11 守护进程 · 残血时 停机=%s/输出%.0f → 停机=%s/输出%.0f(自损%.1f) · %s" % [
+		"是" if not res[0]["running"] else "否", res[0]["dealt"],
+		"是" if not res[1]["running"] else "否", res[1]["dealt"], res[1]["lost"],
+		_evo_ok(ok)])
+
+
+## 12 增量编译：一轮爆两次
+static func _t_evo_rebuild() -> void:
+	var n_plain := 0
+	var n_evo := 0
+	for evo in [false, true]:
+		var sim := _evomk("rebuild", "overclock", evo)
+		_w6ring(sim, 20, 120.0, 9999.0)
+		_w6run(sim, 1.2)          # 首爆 0.5s + 追加 0.3s，之后进冷却
+		if evo:
+			n_evo = sim.loadout.rebuild.fired_total
+		else:
+			n_plain = sim.loadout.rebuild.fired_total
+	print(" 12 增量编译 · 1.2 秒内引爆 %d → %d 次 · %s" % [
+		n_plain, n_evo, _evo_ok(n_plain == 1 and n_evo == 2)])
+
+
 static func run_opening() -> void:
 	var s1: Dictionary = UpgradeDefs.stats_for("whip", 1)
 	var reach: float = float(s1["reach"])

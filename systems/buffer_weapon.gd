@@ -22,6 +22,7 @@ var radius := 0.0
 var gain := 0.0      # 每次命中的加成
 var cap := 0.0       # 加成上限
 var hit_cap := 0
+var evolved := false # 环形缓冲：层数不再衰减
 
 var cooldown := 0.0
 var stacks := 0.0    # 当前加成比例（0 ~ cap）
@@ -37,13 +38,19 @@ func apply_stats(level: int, lo: Loadout) -> void:
 	cap = float(s["cap"])
 	hit_cap = int(s["hit_cap"])
 	enabled = true
+	evolved = lo.is_evolved("buffer")
+	if evolved:
+		cap *= 1.5
 
 
 func update(dt: float, sim) -> void:
 	if not enabled:
 		return
 
-	if stacks > 0.0:
+	# 环形缓冲（进化）：写满了就从头接着写，不再清零。
+	# 取舍很清楚 —— 失去"维持火力"的紧张感，换来一层真正稳定的高输出。
+	# 玩家为它付出的代价是先要把超频刷满，那是 5 次升级的机会成本。
+	if stacks > 0.0 and not evolved:
 		_idle += dt
 		if _idle >= IDLE_RESET:
 			stacks = 0.0

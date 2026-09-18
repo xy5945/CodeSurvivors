@@ -19,6 +19,7 @@ var bolt_count := 1
 var weighted := false
 var dot_dps := 0.0
 var hit_cap := 0        # 单道落雷的命中上限（0 = 不限）
+var evolved := false    # 随机种子：同点三连击
 
 var cooldown := 0.0
 
@@ -33,6 +34,7 @@ func apply_stats(level: int, lo: Loadout) -> void:
 	dot_dps = float(s["dot"]) * lo.damage_mult
 	hit_cap = int(s["hit_cap"])
 	enabled = true
+	evolved = lo.is_evolved("judgment")
 
 
 func update(dt: float, sim) -> void:
@@ -61,5 +63,17 @@ func update(dt: float, sim) -> void:
 			tx = sim.player_x + cos(a) * d
 			ty = sim.player_y + sin(a) * d
 
-		sim.fx.strike(sim, tx, ty, radius, damage, dot_dps, hit_cap)
+		# 随机种子：同一个落点连摇三次。
+		# 每一击都单独算命中上限 —— 这才是它值钱的地方：
+		# 满级单发封顶 28 个，三连击就是三个独立的 28，
+		# 敌群越密越明显。单发伤害砍到 55%，总伤 1.65 倍但**覆盖**是 3 倍。
+		var times := 3 if evolved else 1
+		var mul := 0.55 if evolved else 1.0
+		for k in times:
+			var jx := 0.0
+			var jy := 0.0
+			if evolved:
+				jx = randf_range(-16.0, 16.0)
+				jy = randf_range(-16.0, 16.0)
+			sim.fx.strike(sim, tx + jx, ty + jy, radius, damage * mul, dot_dps, hit_cap)
 		i += 1

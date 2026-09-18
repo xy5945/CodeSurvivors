@@ -30,12 +30,15 @@ func clear() -> void:
 
 
 func add_wave(x: float, y: float, max_r: float, spd: float, dmg: float,
-		can_back: bool, back_bonus: float, hit_cap: int = 0) -> void:
+		can_back: bool, back_bonus: float, hit_cap: int = 0, chain: int = 0) -> void:
 	waves.append({
 		"x": x, "y": y, "r": 0.0, "prev": 0.0,
 		"max": max_r, "spd": spd, "dmg": dmg,
 		"back": can_back, "phase": 0, "bonus": back_bonus,
 		"cap": hit_cap, "hits": 0,
+		# 事件总线（进化）：波扫到的前 chain 个位置各再发一圈小广播。
+		# cpos 里存的是"被扫到的敌人的位置"，也就是消息的订阅者。
+		"chain": chain, "cpos": [],
 	})
 
 
@@ -88,6 +91,9 @@ func _update_waves(dt: float, sim) -> void:
 			w["r"] = float(w["r"]) + float(w["spd"]) * dt
 			if float(w["r"]) >= float(w["max"]):
 				w["r"] = w["max"]
+				# 链式在"主波扫到边缘"的这一刻触发，而不是等波整个消失 ——
+				# 满级广播带回卷，波不会在边缘结束，等消失的话永远等不到。
+				_spawn_chain(sim, w)
 				if bool(w["back"]):
 					w["phase"] = 1          # 回卷：广播并等待
 				else:
@@ -113,21 +119,43 @@ func _update_waves(dt: float, sim) -> void:
 		# 封顶之后，AoE 的价值变成"稳定清掉身周一批"，而不是"人越多我越强"，
 		# 多出来的敌人就会真的围上来。这是"必须保持移动"能成立的前提。
 		var cap: int = int(w["cap"])
+		var cpos = null
+		if int(w["chain"]) > 0:
+			cpos = w["cpos"]
 		if cap > 0:
 			var left: int = cap - int(w["hits"])
 			if left <= 0:
 				i -= 1
 				continue
-			w["hits"] = int(w["hits"]) + _damage_ring(sim, float(w["x"]), float(w["y"]), lo, hi, dmg, left)
+			w["hits"] = int(w["hits"]) + _damage_ring(sim, float(w["x"]), float(w["y"]), lo, hi, dmg, left, cpos)
 		else:
-			_damage_ring(sim, float(w["x"]), float(w["y"]), lo, hi, dmg)
+			_damage_ring(sim, float(w["x"]), float(w["y"]), lo, hi, dmg, -1, cpos)
 		i -= 1
+
+
+## 事件总线（广播进化）：把波扫到的前几个位置各发出一圈小广播。
+##
+## 位置取自"真的被这波扫到的敌人"，不是随机点 —— 消息是被订阅者接住的，
+## 随机点会让它看起来像"凭空又炸了一下"，读不出"链式传播"这层意思。
+## 子波不再连锁（chain=0），否则一圈接一圈会滚成雪崩：
+## 3 处 × 3 处 × 3 处，一次广播能把整个屏幕清干净。
+func _spawn_chain(sim, w: Dictionary) -> void:
+	var cpos: Array = w["cpos"]
+	if cpos.is_empty():
+		return
+	var sub_r: float = float(w["max"]) * 0.45
+	var sub_dmg: float = float(w["dmg"]) * 0.5
+	var sub_cap: int = maxi(6, int(w["cap"]) / 2)
+	for p in cpos:
+		add_wave(float(p.x), float(p.y), sub_r, float(w["spd"]) * 0.9,
+			sub_dmg, false, 1.0, sub_cap, 0)
 
 
 ## limit >= 0 时最多命中 limit 个，返回实际命中数（供调用方累计额度）。
 ## limit < 0 = 不限。
+## cpos 非空时，把命中的位置记进去（最多 3 个），供广播进化的链式传播使用。
 func _damage_ring(sim, cx: float, cy: float, lo: float, hi: float, dmg: float,
-		limit: int = -1) -> int:
+		limit: int = -1, cpos = null) -> int:
 	var e: EnemyPool = sim.enemies
 	var lo2 := lo * lo
 	var hi2 := hi * hi
@@ -147,6 +175,8 @@ func _damage_ring(sim, cx: float, cy: float, lo: float, hi: float, dmg: float,
 			continue
 		e.hp[j] -= dmg * e.dmg_mult(j)
 		e.flash[j] = GameConfig.WAVE_FLASH
+		if cpos != null and cpos.size() < 3:
+			cpos.append(Vector2(e.px[j], e.py[j]))
 		hits += 1
 	return hits
 

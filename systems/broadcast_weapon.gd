@@ -19,6 +19,7 @@ var spd := 0.0
 var can_back := false
 var back_bonus := 1.0
 var hit_cap := 0        # 每波命中上限（0 = 不限，见 FxStore._damage_ring）
+var evolved := false    # 事件总线：命中的敌人再广播一次
 
 var cooldown := 0.0
 
@@ -33,6 +34,7 @@ func apply_stats(level: int, lo: Loadout) -> void:
 	back_bonus = float(s["back_bonus"])
 	hit_cap = int(s["hit_cap"])
 	enabled = true
+	evolved = lo.is_evolved("broadcast")
 
 
 func update(dt: float, sim) -> void:
@@ -43,4 +45,5 @@ func update(dt: float, sim) -> void:
 		return
 	cooldown = cd_base
 	sim.sfx_events.append("wave")
-	sim.fx.add_wave(sim.player_x, sim.player_y, max_r, spd, damage, can_back, back_bonus, hit_cap)
+	sim.fx.add_wave(sim.player_x, sim.player_y, max_r, spd, damage, can_back,
+		back_bonus, hit_cap, 3 if evolved else 0)

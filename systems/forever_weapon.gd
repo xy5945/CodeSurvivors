@@ -26,6 +26,8 @@ var self_dps := 0.0
 var hit_cap := 0
 
 var running := false      # 安全阀状态（渲染层要读它，停机时画暗环）
+var throttled := false    # 守护进程（进化）：低血降级运行中，渲染层画得更暗
+var evolved := false
 var drained_total := 0.0  # 本局自损总量（测试用）
 
 
@@ -36,6 +38,7 @@ func apply_stats(level: int, lo: Loadout) -> void:
 	self_dps = float(s["self_dps"])
 	hit_cap = int(s["hit_cap"])
 	enabled = true
+	evolved = lo.is_evolved("forever")
 
 
 func update(dt: float, sim) -> void:
@@ -43,23 +46,40 @@ func update(dt: float, sim) -> void:
 		return
 
 	var frac: float = sim.player_hp / maxf(sim.max_hp, 1.0)
-	if running:
-		if frac <= SHUTOFF_HP_FRAC:
-			running = false
+	if evolved:
+		# 守护进程：不再停机。血量低于 30% 时输出和自损一起减半（降级运行）。
+		#
+		# 原版是"低于 30% 直接停机，回到 42% 才重启"的开关。开关的代价是
+		# 血量锯齿 + 光环闪烁，玩家在残血时反而失去唯一的输出手段。
+		# 进化把它变成连续降级：残血时它依然是可靠的输出，只是打折 ——
+		# 这才是"守护进程"该有的样子（一直在后台跑，不会自己停）。
+		running = true
+		throttled = frac < SHUTOFF_HP_FRAC
 	else:
-		if frac >= RESTART_HP_FRAC:
-			running = true
+		throttled = false
+		if running:
+			if frac <= SHUTOFF_HP_FRAC:
+				running = false
+		else:
+			if frac >= RESTART_HP_FRAC:
+				running = true
 	if not running:
 		return
 
-	sim.self_damage(self_dps * dt)
-	drained_total += self_dps * dt
+	var drain := self_dps * dt
+	var dps_now := dps
+	if throttled:
+		drain *= 0.5
+		dps_now *= 0.5
+
+	sim.self_damage(drain)
+	drained_total += drain
 
 	var e: EnemyPool = sim.enemies
 	var cx: float = sim.player_x
 	var cy: float = sim.player_y
 	var r2 := radius * radius
-	var dmg: float = dps * dt
+	var dmg: float = dps_now * dt
 
 	var n: int = sim.grid.query(cx, cy, radius, hit_cap)
 	var hits := 0
