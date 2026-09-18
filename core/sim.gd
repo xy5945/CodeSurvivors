@@ -120,7 +120,13 @@ func step(dt: float, dir_x: float, dir_y: float) -> void:
 		return
 	time += dt
 	sfx_events.clear()
-	card_events.clear()
+	# card_events **不能**在这里清。它和 sfx_events 不一样：音效事件全部产生于
+	# step 内部，同一帧就消费完；而"首次获得武器/被动"的事件产生于玩家在升级
+	# 弹窗里点卡片的那一刻 —— 那是 step 之后、下一帧之前。这里一清，武器卡的
+	# 事件就被下一帧的 step 吞掉，玩家永远看不到武器知识卡（2026-09-17 实测）。
+	# 所以它是一条靠消费方清空的队列，见 KnowledgeUI 的投递处。
+	if card_events.size() > 64:
+		card_events.clear()
 
 	_move_player(dt, dir_x, dir_y)
 	if spawn_enabled:

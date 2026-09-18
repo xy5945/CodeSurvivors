@@ -102,6 +102,14 @@ func _ready() -> void:
 			get_tree().quit()
 			return
 
+	# --cardcov：知识卡覆盖率，跑三种典型局看一局能解锁几张卡
+	for a in OS.get_cmdline_user_args():
+		if a.begins_with("--cardcov"):
+			set_process(false)
+			Bench.run_card_coverage(float(a.split("=")[-1]) if "=" in a else 20.0)
+			get_tree().quit()
+			return
+
 	randomize()
 	# 竞技场外是"虚空"：纯近黑，和场内那块通电的深蓝地板形成色阶。
 	# 这一层色差是边界可读性的第一道保险（第二道是 grid_bg 里的霓虹墙）。
@@ -411,9 +419,14 @@ func _drain_sfx() -> void:
 
 
 ## 知识卡事件：仿真层只说"这一帧首次遇到了什么"，排队和显示交给 KnowledgeUI。
+## 队列由**这里**清空，不在 sim.step 里清 —— 升级弹窗里点出来的事件发生在 step
+## 之后，step 一清就丢了（武器卡曾经全部弹不出来，就是栽在这）。
 func _drain_cards() -> void:
+	if sim.card_events.is_empty():
+		return
 	for id in sim.card_events:
 		knowledge.push(id)
+	sim.card_events.clear()
 
 
 ## 状态变化类音效：靠比前后帧的累计计数和状态位来发现。

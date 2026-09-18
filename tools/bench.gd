@@ -214,6 +214,89 @@ static func run_smoke(minutes: float = 10.0) -> void:
 ##
 ## 运行：godot --headless --path . -- --opening
 ##
+##
+## 知识卡覆盖率：一局到底能解锁多少张卡？
+##
+## 图鉴要显示"已解锁 x / 25"，那就得先知道 25 这个数在真实一局里够不够得着。
+## 三个变量会挡住集齐：① 升级次数（升级项要一个个选出来）
+## ② 玩家能不能活到后期（后面的怪 + Boss 卡都在时间轴上）③ 选择策略。
+## 所以跑三种典型局：理想玩家（无敌 + 优先拿新项）/ 随手点（无敌 + 随机）
+## / 真实玩家（不无敌 + 优先新项，会死在中途）。
+##
+## 运行：godot --headless --path . -- --cardcov
+##
+static func run_card_coverage(minutes: float = 20.0) -> void:
+	print("")
+	print("=== 知识卡覆盖率 ===")
+	print("每局 %.0f 分钟 · 绕圈移动 · 三选一" % minutes)
+	print("")
+	_cardcov("A 理想玩家 · 无敌 · 优先拿没拿过的 · 小圈", minutes, true, true, 0.06)
+	_cardcov("B 随手点 · 无敌 · 三选一随机 · 小圈", minutes, true, false, 0.06)
+	_cardcov("C 稳着打 · 不无敌 · 优先新项 · 大圈（躲得多、打得少）", minutes, false, true, 0.006)
+	_cardcov("D 贴脸打 · 不无敌 · 优先新项 · 小圈（打得狠、容易被围）", minutes, false, true, 0.06)
+	print("")
+
+
+static func _cardcov(title: String, minutes: float, god: bool, greedy: bool, orbit: float) -> void:
+	var sim := Sim.new()
+	sim.setup()
+	sim.god_mode = god
+
+	var seen := {}
+	var steps := int(minutes * 60.0 / GameConfig.FIXED_DT)
+	var deaths := -1.0
+	var step := 0
+	while step < steps:
+		var a := float(step) * orbit
+		sim.step(GameConfig.FIXED_DT, cos(a), sin(a))
+		for id in sim.card_events:
+			seen[str(id)] = true
+		sim.card_events.clear()
+		# 不开无敌的局：血空了就停，记下死亡时间
+		if not god and sim.player_hp <= 0.0 and deaths < 0.0:
+			deaths = sim.time
+			break
+
+		while sim.pending_levelups > 0:
+			var choices: Array = sim.loadout.roll_choices(3)
+			var pick: Dictionary = _pick(choices, sim, greedy)
+			var id := str(pick["def"]["id"])
+			if id == "_heal":
+				sim.apply_heal_pick(30.0)
+			else:
+				sim.apply_upgrade(id)
+		step += 1
+
+	var total := KnowledgeDB.total()
+	var miss := []
+	for c in KnowledgeDB.CARDS:
+		if not seen.has(str(c["id"])):
+			miss.append(str(c["id"]))
+	print("  %s" % title)
+	print("    Lv %d · 用时 %.1f 分%s · 解锁 %d / %d · 补丁包 %d · 宝箱 %d" % [
+		sim.level, (deaths if deaths > 0.0 else sim.time) / 60.0,
+		" （阵亡）" if deaths > 0.0 else "", seen.size(), total,
+		sim.patches_collected, sim.chests_collected])
+	if miss.is_empty():
+		print("    全解锁")
+	else:
+		print("    没拿到：" + "、".join(miss))
+
+
+## greedy = true 时优先选还没拥有的项（想集齐的玩家都这么点），
+## 否则三选一随手点第一个。
+static func _pick(choices: Array, sim, greedy: bool) -> Dictionary:
+	if not greedy:
+		return choices[0]
+	var fallback: Dictionary = choices[0]
+	for c in choices:
+		var d: Dictionary = c["def"]
+		var id := str(d["id"])
+		if id != "_heal" and sim.loadout.level_of(id) == 0:
+			return c
+	return fallback
+
+
 static func run_opening() -> void:
 	var s1: Dictionary = UpgradeDefs.stats_for("whip", 1)
 	var reach: float = float(s1["reach"])
