@@ -457,6 +457,11 @@ func debug_reset() -> void:
 	_card.visible = false
 
 
+## 结算面板要显示"本局解锁了几张卡"，这个数字只有这里知道。
+func unlocked_count() -> int:
+	return _unlocked.size()
+
+
 func debug_snapshot() -> Dictionary:
 	return {
 		"cur": _cur, "queue": _queue.size(),

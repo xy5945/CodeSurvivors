@@ -256,6 +256,22 @@ func stop_bgm() -> void:
 			tw.tween_property(p, "volume_db", SILENT, 0.6)
 
 
+## 重开一局时把 BGM 拉回来。两个坑：
+## ① stop_bgm 只是淡音到 SILENT，**没有 stop()**，player.playing 还是 true，
+##    所以这里不能只判 playing，必须显式把音量写回 BGM_VOL
+## ② Boss 模式是 autoload 上的状态，重载场景不会重置它，要手动关掉
+func restart_bgm() -> void:
+	if not _enabled:
+		return
+	_boss_mode = false
+	if _p_boss != null and _p_boss.playing:
+		_p_boss.stop()
+	if _p_norm != null:
+		_p_norm.volume_db = BGM_VOL
+		if not _p_norm.playing:
+			_p_norm.play()
+
+
 func toggle_mute() -> bool:
 	_muted = not _muted
 	AudioServer.set_bus_mute(0, _muted)

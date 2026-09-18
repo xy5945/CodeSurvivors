@@ -1,4 +1,4 @@
-[gd_scene load_steps=16 format=3]
+[gd_scene load_steps=17 format=3]
 
 [ext_resource type="Script" path="res://main.gd" id="1_main"]
 [ext_resource type="Script" path="res://render/enemy_renderer.gd" id="2_er"]
@@ -15,6 +15,7 @@
 [ext_resource type="Script" path="res://render/bolt_renderer.gd" id="13_bolt"]
 [ext_resource type="Script" path="res://render/enemy_bullet_renderer.gd" id="14_eb"]
 [ext_resource type="Script" path="res://ui/knowledge_ui.gd" id="15_kb"]
+[ext_resource type="Script" path="res://ui/result_ui.gd" id="16_res"]
 
 [node name="Main" type="Node2D"]
 script = ExtResource("1_main")
@@ -66,3 +67,7 @@ layer = 6
 [node name="LevelUpUI" type="CanvasLayer" parent="."]
 script = ExtResource("8_lvup")
 layer = 10
+
+[node name="ResultUI" type="CanvasLayer" parent="."]
+script = ExtResource("16_res")
+layer = 20

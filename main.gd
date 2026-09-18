@@ -18,6 +18,7 @@ extends Node2D
 @onready var hud: HUD = $HUD
 @onready var level_up: LevelUpUI = $LevelUpUI
 @onready var knowledge: KnowledgeUI = $KnowledgeUI
+@onready var result: ResultUI = $ResultUI
 @onready var vignette: DamageVignette = $DamageVignette
 
 var sim: Sim
@@ -39,6 +40,8 @@ var _prev_hp := 0.0
 var _was_dead := false
 var _was_victory := false
 var _was_boss := false
+# 一局结束（死亡/通关）到弹结算之间的倒计时；<0 表示还没结束
+var _end_delay := -1.0
 
 
 func _ready() -> void:
@@ -140,6 +143,8 @@ func _ready() -> void:
 	whip_arc.sim = sim
 	level_up.sim = sim
 	level_up.resolved.connect(_on_levelup_resolved)
+	result.restart_requested.connect(_on_restart)
+	result.quit_requested.connect(_on_quit)
 
 	camera.position = Vector2(sim.player_x, sim.player_y)
 	_sync_player(0.0, false)
@@ -163,6 +168,37 @@ func _ready() -> void:
 		_cardtest()
 		get_tree().quit()
 		return
+
+	if OS.get_cmdline_user_args().has("--resulttest"):
+		set_process(false)
+		_resulttest()
+		get_tree().quit()
+		return
+
+	# --resultshot=win|lose：直接开结算面板截图（结算会暂停整棵树，
+	# --shot 的倒计时在暂停时跑不动，所以单独给一条路径）
+	for a in OS.get_cmdline_user_args():
+		if a.begins_with("--resultshot"):
+			var win := a != "--resultshot=lose"
+			sim.time = 1103.0 if win else 407.0
+			sim.kills = 4821 if win else 936
+			sim.level = 58 if win else 19
+			sim.gems_collected = 3200 if win else 640
+			sim.patches_collected = 11
+			sim.chests_collected = 4 if win else 1
+			sim.victory = win
+			sim.dead = not win
+			for id in sim.loadout.levels:
+				if sim.loadout.level_of(id) > 0:
+					knowledge.push(id)
+			knowledge.push("gem")
+			knowledge.push("whip")
+			result.open(sim, knowledge.unlocked_count(), KnowledgeDB.total())
+			await RenderingServer.frame_post_draw
+			await RenderingServer.frame_post_draw
+			_save_shot()
+			get_tree().quit()
+			return
 
 	if OS.get_cmdline_user_args().has("--uitest"):
 		set_process(false)
@@ -207,6 +243,91 @@ func _ready() -> void:
 ## 字典取值），而它在 headless 下不会被执行到，所以单独开一条测试路径。
 ## 运行：godot --headless --path . -- --uitest
 ##
+## 结算界面自检：结算是这个游戏"能拿给别人玩"的最后一块，
+## 死在这里最尴尬 —— 玩家打完一局看到的是静止画面，不知道自己赢了没有。
+##
+## 运行：godot --headless --path . -- --resulttest
+func _resulttest() -> void:
+	print("")
+	print("=== 结算界面 ===")
+
+	# A 死亡流程：结束后不该同帧弹面板（死亡音和红光要看得到）
+	sim.time = 275.0
+	sim.kills = 1234
+	sim.level = 21
+	sim.gems_collected = 890
+	sim.patches_collected = 7
+	sim.chests_collected = 2
+	knowledge.push("whip")
+	knowledge.push("gem")
+	sim.dead = true
+	_update_end(0.016)
+	var same_frame := result.is_open()
+	_update_end(1.0)
+	_update_end(1.0)
+	print("  A 死亡 · 同帧不弹=%s · 1.4 秒后打开=%s · 暂停=%s" % [
+		"OK" if not same_frame else "FAIL",
+		"OK" if result.is_open() else "FAIL",
+		"OK" if get_tree().paused else "FAIL"])
+	print("     标题 %s" % result._title.text)
+	print("     %s" % _row_texts())
+
+	# B 通关流程：同一套面板，标题和数据要跟着变
+	result.debug_reset()
+	sim.dead = false
+	sim.victory = true
+	_end_delay = -1.0
+	_update_end(0.016)
+	_update_end(1.0)
+	_update_end(1.0)
+	print("  B 通关 · 打开=%s · 标题 %s" % [
+		"OK" if result.is_open() else "FAIL", result._title.text])
+
+	# C 两个按钮的信号（暂停时点得到，是结算能不能用的前提）
+	# 先摘掉 main 自己的两个槽：在 _ready 里真的 reload 场景 / quit 会炸，
+	# 这里只验证"按钮按下去信号能出来"，真正的重开逻辑靠实机验证。
+	result.restart_requested.disconnect(_on_restart)
+	result.quit_requested.disconnect(_on_quit)
+	var hits := [false, false]
+	result.restart_requested.connect(func() -> void: hits[0] = true, CONNECT_ONE_SHOT)
+	result.quit_requested.connect(func() -> void: hits[1] = true, CONNECT_ONE_SHOT)
+	_click_button(0)
+	_click_button(1)
+	print("  C 按钮 · 再来一局=%s · 退出=%s" % [
+		"OK" if hits[0] else "FAIL", "OK" if hits[1] else "FAIL"])
+
+	# D 关闭后恢复
+	result.debug_reset()
+	print("  D 关闭 · 打开=%s · 暂停已恢复=%s" % [
+		"OK" if not result.is_open() else "FAIL",
+		"OK" if not get_tree().paused else "FAIL"])
+	print("")
+
+
+func _row_texts() -> String:
+	var out: Array[String] = []
+	for hb in result._rows.get_children():
+		var labels := hb.get_children()
+		if labels.size() >= 2:
+			out.append("%s %s" % [labels[0].text, labels[1].text])
+	return " · ".join(out)
+
+
+## 递归找 Button —— 面板是代码搭的，没存按钮引用，测试里按序取更省事
+func _click_button(idx: int) -> void:
+	var btns: Array[Button] = []
+	_collect_buttons(result._panel, btns)
+	if idx < btns.size():
+		btns[idx].pressed.emit()
+
+
+func _collect_buttons(n: Node, out: Array[Button]) -> void:
+	if n is Button:
+		out.append(n)
+	for c in n.get_children():
+		_collect_buttons(c, out)
+
+
 func _uitest() -> void:
 	print("")
 	print("=== 升级弹窗 · 无头测试 ===")
@@ -358,6 +479,8 @@ func _cardtest() -> void:
 
 
 func _process(delta: float) -> void:
+	_update_end(delta)
+
 	# Input.get_vector 自带对角线归一化，斜向不会比直线快 1.41 倍。
 	# 参数顺序是 (neg_x, pos_x, neg_y, pos_y) = (left, right, up, down)，写反了方向会全乱。
 	var dir := Input.get_vector("move_left", "move_right", "move_up", "move_down")
@@ -388,17 +511,54 @@ func _process(delta: float) -> void:
 
 	# 升级弹窗：放在最后，本帧的仿真已经跑完。
 	# --nolv：截图模式专用。弹窗一开游戏就暂停，--shot 永远等不到目标帧。
-	if not _nolv and not sim.dead and sim.pending_levelups > 0 and not level_up.visible:
+	if not _nolv and not sim.dead and not sim.victory and sim.pending_levelups > 0 and not level_up.visible:
 		level_up.open(sim)
 		Sfx.play("levelup")
 
 	if _shot_countdown > 0:
 		_shot_countdown -= 1
 		if _shot_countdown == 0:
-			var path := "user://shot.png"
-			get_viewport().get_texture().get_image().save_png(path)
-			print("截已保存: " + ProjectSettings.globalize_path(path))
+			_save_shot()
 			get_tree().quit()
+
+
+## 一局结束 → 结算面板。
+## 不立刻弹：死亡音、红色渐晕、Boss 的爆炸都要时间走完，玩家也需要
+## 一两秒反应"啊我死了/啊打赢了"。结算面板本身会暂停整棵树，所以这里
+## 只是倒计时，暂停的活儿交给 ResultUI.open。
+func _update_end(delta: float) -> void:
+	if not (sim.dead or sim.victory):
+		return
+	if result.is_open():
+		return
+	if _end_delay < 0.0:
+		_end_delay = ResultUI.END_DELAY
+		return
+	_end_delay -= delta
+	if _end_delay <= 0.0:
+		result.open(sim, knowledge.unlocked_count(), KnowledgeDB.total())
+
+
+## 重开：直接重载场景。手动 reset 要清七八个对象池 + 空间网格 + 所有渲染器
+## + 知识卡 + 音效状态，漏一个就是"重开后画面有残留"，以后每加系统还得回来补。
+func _on_restart() -> void:
+	get_tree().paused = false
+	Input.set_mouse_mode(Input.MOUSE_MODE_HIDDEN)
+	Sfx.restart_bgm()
+	get_tree().reload_current_scene()
+
+
+func _on_quit() -> void:
+	get_tree().paused = false
+	get_tree().quit()
+
+
+## 截图存档。渲染相关的检查（朝向、卡片位置、面板排版）headless 测不出来，
+## 只能真跑一帧把画面存下来看。
+func _save_shot() -> void:
+	var path := "user://shot.png"
+	get_viewport().get_texture().get_image().save_png(path)
+	print("截已保存: " + ProjectSettings.globalize_path(path))
 
 
 func _sync_player(dt: float, moving: bool) -> void:
