@@ -20,6 +20,12 @@ signal quit_requested
 ## 立刻弹会让玩家觉得"莫名其妙就结束了"，1.4 秒刚好够反应过来发生了什么。
 const END_DELAY := 1.4
 
+# ---- 面板尺寸：Build 行会随升级数量换行，面板要跟着长高（见 _fit_build）----
+const PANEL_W := 460.0
+const PANEL_H := 278.0
+const PANEL_PAD := 18.0     # content_margin 左右，算可用文字宽度要用
+const PANEL_MAX_H := 318.0  # 视口 360，上下至少各留 21
+
 # ---- 配色 ----
 const C_WIN := Color(1.0, 0.88, 0.40, 1.0)
 const C_LOSE := Color(1.0, 0.40, 0.42, 1.0)
@@ -57,9 +63,10 @@ func open(sim: Sim, unlocked: int, total: int) -> void:
 	var win := sim.victory
 	_title.text = "BUILD SUCCESSFUL" if win else "FATAL ERROR"
 	_title.add_theme_color_override("font_color", C_WIN if win else C_LOSE)
-	_sub.text = "编译成功 · 程序跑通了，可以交付了" if win else "程序已崩溃 · 进程被系统终止"
+	_sub.text = "编译成功，程序全部跑通，可以交付了" if win else "程序已崩溃 · 进程被系统终止"
 	_fill_rows(sim, unlocked, total)
 	_build.text = _build_text(sim)
+	_fit_build(_build.text)
 
 	_dim.visible = true
 	_open = true
@@ -72,11 +79,30 @@ func _fill_rows(sim: Sim, unlocked: int, total: int) -> void:
 		c.free()
 
 	_row("用时", _fmt(sim.time))
-	_row("击杀", "%d" % sim.kills)
+	_row("消灭 Bug", "%d 个" % sim.kills)
 	_row("等级", "Lv %d" % sim.level)
-	_row("经验宝石", "%d" % sim.gems_collected)
+	_row("内存资源", "%d" % sim.gems_collected)
 	_row("补丁包 / 宝箱", "%d / %d" % [sim.patches_collected, sim.chests_collected])
 	_row("知识卡解锁", "%d / %d" % [unlocked, total])
+
+
+## Build 那一行最多 11 项（6 武器 + 5 被动），424px 宽放不下，一定会换行。
+## 但 VBox 里的 autowrap Label 只按"一行"要高度，多出来的行会被裁掉 ——
+## 所以这里量出实际行数，手动撑高 Label，面板高度也跟着长（并重新居中）。
+func _fit_build(text: String) -> void:
+	var f := _build.get_theme_font("font")
+	var fs := _build.get_theme_font_size("font_size")
+	if f == null:
+		return
+	var avail: float = PANEL_W - PANEL_PAD * 2.0
+	var w: float = f.get_string_size(text, fs).x
+	var n := maxi(1, ceili(w / maxf(avail, 1.0)))
+	var lh: float = f.get_height(fs)
+	_build.custom_minimum_size = Vector2(0.0, lh * float(n) + 2.0)
+
+	var h: float = minf(PANEL_H + lh * float(n - 1), PANEL_MAX_H)
+	_panel.size = Vector2(PANEL_W, h)
+	_panel.position = Vector2((640.0 - PANEL_W) * 0.5, (360.0 - h) * 0.5)
 
 
 func _build_text(sim: Sim) -> String:
@@ -103,14 +129,14 @@ func _build_ui() -> void:
 	_dim.color = C_DIM
 	add_child(_dim)
 
-	# 640x360 的视口：面板 460x278 居中，四周各留 90x41
+	# 640x360 的视口：面板 460x278 居中，四周各留 90x41（高度可能被 _fit_build 抬高）
 	var root := Control.new()
 	root.set_anchors_preset(Control.PRESET_FULL_RECT)
 	_dim.add_child(root)
 
 	_panel = Panel.new()
-	_panel.position = Vector2(90.0, 41.0)
-	_panel.size = Vector2(460.0, 278.0)
+	_panel.position = Vector2((640.0 - PANEL_W) * 0.5, (360.0 - PANEL_H) * 0.5)
+	_panel.size = Vector2(PANEL_W, PANEL_H)
 	root.add_child(_panel)
 
 	var sb := StyleBoxFlat.new()

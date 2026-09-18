@@ -188,6 +188,10 @@ func _ready() -> void:
 			sim.chests_collected = 4 if win else 1
 			sim.victory = win
 			sim.dead = not win
+			# 满配 Build：结算面板的 Build 行会换行，截图要能看到换行后的排版
+			for u in UpgradeDefs.UPGRADES:
+				sim.loadout.levels[str(u["id"])] = int(u["max"])
+			sim.loadout.recompute()
 			for id in sim.loadout.levels:
 				if sim.loadout.level_of(id) > 0:
 					knowledge.push(id)
