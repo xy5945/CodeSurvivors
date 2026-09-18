@@ -80,7 +80,8 @@ func _sweep(sim) -> void:
 		e.flash[j] = FLASH
 		hits += 1
 
-	sim.fx.add_pulse(cx, cy, radius * 0.2, radius, 0.35, 0, false)
+	# 寿命 0.7s：24 帧序列按 ~34fps 播完（pulse 纯视觉，不影响结算）。
+	sim.fx.add_pulse(cx, cy, radius * 0.2, radius, 0.7, 0, false)
 	sim.sfx_events.append("wave")
 
 	recycled_total += recycled

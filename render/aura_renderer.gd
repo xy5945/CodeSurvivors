@@ -12,7 +12,7 @@ extends Node2D
 ##   永真力场 while(true) —— 会转的循环箭头环（停机时转停、变灰）
 ##   缓冲区溢出          —— 一圈格子槽，按层数点亮；满了方块漫出环外
 ##   全量重编译          —— 块状进度环（编译进度条），12 个方块依次点亮
-##   垃圾回收            —— 圆环 + 碎块被"吸"回中心（回收）
+##   垃圾回收            —— 手绘 24 帧火花序列（四周向中心汇聚内吸）
 ##   断点调试（冻结）    —— 六边形冰晶 + 放射线
 ##   全量重编译爆发      —— 方形环 + 四角方块向外
 ##   缓冲区爆发（溢出）  —— 手绘 16 帧能量球序列（亮起→撕裂→消散）
@@ -62,6 +62,40 @@ const BURST_FRAMES: Array[Texture2D] = [
 	preload("res://assets/fx/buffer_burst/burst_14.png"),
 	preload("res://assets/fx/buffer_burst/burst_15.png"),
 	preload("res://assets/fx/buffer_burst/burst_16.png"),
+]
+
+# 垃圾回收：24 帧火花序列（assets/fx/gc_vacuum/gc_01..24.png，376x376）。
+# 运动方向是"从四周向中心汇聚"—— 天然就是"回收"的语义，
+# 比之前代码画的"碎块内吸"细腻得多。内容以画布中心对称，
+# 峰值跨度约 340px（帧 12 实测包围盒），缩放按跨度贴齐回收半径。
+const GC_SIZE := 376.0
+const GC_SCALE_PER_R := 1.0 / 170.0     # 纹理缩放 = 回收半径 r * GC_SCALE_PER_R
+
+const GC_FRAMES: Array[Texture2D] = [
+	preload("res://assets/fx/gc_vacuum/gc_01.png"),
+	preload("res://assets/fx/gc_vacuum/gc_02.png"),
+	preload("res://assets/fx/gc_vacuum/gc_03.png"),
+	preload("res://assets/fx/gc_vacuum/gc_04.png"),
+	preload("res://assets/fx/gc_vacuum/gc_05.png"),
+	preload("res://assets/fx/gc_vacuum/gc_06.png"),
+	preload("res://assets/fx/gc_vacuum/gc_07.png"),
+	preload("res://assets/fx/gc_vacuum/gc_08.png"),
+	preload("res://assets/fx/gc_vacuum/gc_09.png"),
+	preload("res://assets/fx/gc_vacuum/gc_10.png"),
+	preload("res://assets/fx/gc_vacuum/gc_11.png"),
+	preload("res://assets/fx/gc_vacuum/gc_12.png"),
+	preload("res://assets/fx/gc_vacuum/gc_13.png"),
+	preload("res://assets/fx/gc_vacuum/gc_14.png"),
+	preload("res://assets/fx/gc_vacuum/gc_15.png"),
+	preload("res://assets/fx/gc_vacuum/gc_16.png"),
+	preload("res://assets/fx/gc_vacuum/gc_17.png"),
+	preload("res://assets/fx/gc_vacuum/gc_18.png"),
+	preload("res://assets/fx/gc_vacuum/gc_19.png"),
+	preload("res://assets/fx/gc_vacuum/gc_20.png"),
+	preload("res://assets/fx/gc_vacuum/gc_21.png"),
+	preload("res://assets/fx/gc_vacuum/gc_22.png"),
+	preload("res://assets/fx/gc_vacuum/gc_23.png"),
+	preload("res://assets/fx/gc_vacuum/gc_24.png"),
 ]
 
 var sim: Sim = null
@@ -158,7 +192,7 @@ func _draw_pulses() -> void:
 		var pos := Vector2(float(p["x"]), float(p["y"]))
 		match int(p["kind"]):
 			0:
-				_pulse_gc(pos, r, t, col)
+				_pulse_gc_frames(pos, float(p["r1"]), t)
 			1:
 				_pulse_freeze(pos, r, t, col)
 			2:
@@ -167,16 +201,13 @@ func _draw_pulses() -> void:
 				_pulse_buffer_frames(pos, float(p["r1"]), t)
 
 
-## 垃圾回收：碎块被"吸"回中心 —— 回收的方向感就是往里收。
-func _pulse_gc(c: Vector2, r: float, t: float, col: Color) -> void:
-	draw_arc(c, r, 0.0, TAU, 40, col, 2.5)
-	var k := 0
-	while k < 6:
-		var a := TAU * float(k) / 6.0 + t * 2.4
-		var rr := lerpf(r * 0.92, 6.0, t)
-		_square(c + Vector2(cos(a), sin(a)) * rr, lerpf(5.0, 2.0, t), a,
-			Color(col.r, col.g, col.b, col.a * 0.9))
-		k += 1
+## 垃圾回收：手绘 24 帧火花序列，四周向中心汇聚 —— "垃圾被吸走"。
+func _pulse_gc_frames(c: Vector2, r1: float, t: float) -> void:
+	var idx := mini(int(t * GC_FRAMES.size()), GC_FRAMES.size() - 1)
+	var tex := GC_FRAMES[idx]
+	var sc: float = r1 * GC_SCALE_PER_R
+	draw_texture_rect(tex, Rect2(c - Vector2(GC_SIZE, GC_SIZE) * 0.5 * sc,
+		Vector2(GC_SIZE, GC_SIZE) * sc), false)
 
 
 ## 断点调试（冻结）：六边形冰晶 + 放射线，和圆环一眼区分。
