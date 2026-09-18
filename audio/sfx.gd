@@ -64,6 +64,10 @@ var _players: Array[AudioStreamPlayer] = []
 var _gate: Dictionary = {}          # 音效名 -> 上次播放的毫秒时间戳
 var _p_norm: AudioStreamPlayer
 var _p_boss: AudioStreamPlayer
+# 正在改 BGM 音量的 tween。淡出没结束就重开一局的话，旧 tween 会继续把
+# 音量往 SILENT 拖，把 restart_bgm 刚写回去的音量又盖掉 —— 表现是重开后 BGM 静音。
+# 所以新 tween 建立前必须先把旧的杀掉。
+var _bgm_tw: Tween = null
 
 # --sfxrec 专用
 var _cap: AudioEffectCapture
@@ -241,7 +245,7 @@ func set_boss_mode(on: bool) -> void:
 	if not to_p.playing:
 		to_p.play()
 	to_p.volume_db = SILENT
-	var tw := create_tween()
+	var tw := _take_bgm_tween()
 	tw.set_parallel(true)
 	tw.tween_property(to_p, "volume_db", BGM_VOL, 0.8)
 	tw.tween_property(from_p, "volume_db", SILENT, 0.8)
@@ -250,9 +254,11 @@ func set_boss_mode(on: bool) -> void:
 func stop_bgm() -> void:
 	if not _enabled:
 		return
+	# 一个 tween 管两个声道（parallel），否则第二条会杀掉第一条
+	var tw := _take_bgm_tween()
+	tw.set_parallel(true)
 	for p in [_p_norm, _p_boss]:
 		if p.playing:
-			var tw := create_tween()
 			tw.tween_property(p, "volume_db", SILENT, 0.6)
 
 
@@ -264,12 +270,26 @@ func restart_bgm() -> void:
 	if not _enabled:
 		return
 	_boss_mode = false
+	_kill_bgm_tween()      # 先停掉可能还在跑的淡出，否则音量写回去也会被它拖走
 	if _p_boss != null and _p_boss.playing:
 		_p_boss.stop()
 	if _p_norm != null:
 		_p_norm.volume_db = BGM_VOL
 		if not _p_norm.playing:
 			_p_norm.play()
+
+
+## 取一条「独占」的 BGM 音量 tween：旧的先杀掉。
+func _take_bgm_tween() -> Tween:
+	_kill_bgm_tween()
+	_bgm_tw = create_tween()
+	return _bgm_tw
+
+
+func _kill_bgm_tween() -> void:
+	if _bgm_tw != null and _bgm_tw.is_valid():
+		_bgm_tw.kill()
+	_bgm_tw = null
 
 
 func toggle_mute() -> bool:

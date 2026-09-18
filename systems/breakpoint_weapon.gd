@@ -65,7 +65,7 @@ func _pause(sim) -> void:
 		if dx * dx + dy * dy > r2:
 			continue
 		# 取最大值：新断点不该缩短上一次的冻结时间
-		e.freeze[j] = maxf(e.freeze[j], freeze_dur)
+		e.freeze[j] = maxf(e.freeze[j], freeze_dur * e.cc_res[j])
 		if damage > 0.0:
 			e.hp[j] -= damage * e.dmg_mult(j)
 		e.flash[j] = FLASH
@@ -99,7 +99,7 @@ func chain_on_death(sim, x: float, y: float, dur: float) -> void:
 		var dy := e.py[j] - y
 		if dx * dx + dy * dy > cr2:
 			continue
-		e.freeze[j] = maxf(e.freeze[j], chain_dur)
+		e.freeze[j] = maxf(e.freeze[j], chain_dur * e.cc_res[j])
 		if damage > 0.0:
 			e.hp[j] -= damage * 0.5 * e.dmg_mult(j)
 		e.flash[j] = FLASH

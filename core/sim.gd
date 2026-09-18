@@ -149,7 +149,12 @@ func setup(cid := CharDefs.DEFAULT_ID) -> void:
 
 
 func step(dt: float, dir_x: float, dir_y: float) -> void:
-	if dead:
+	# 通关和死亡一样要立刻停住仿真。
+	# 以前只判 dead：Boss 倒下到结算弹出之间有 1.4 秒，这段时间里刷怪、
+	# 接触伤害、武器全都还在跑，玩家可能在这 1.4 秒里被残留的小怪打死 ——
+	# 于是同一帧 dead 和 victory 都是 true，胜利音效和死亡音效一起响，
+	# HUD 血条见底还闪受击红光。Boss 死了就是通关，庆祝时间不该再掉血。
+	if dead or victory:
 		return
 	time += dt
 	sfx_events.clear()
@@ -158,8 +163,10 @@ func step(dt: float, dir_x: float, dir_y: float) -> void:
 	# 弹窗里点卡片的那一刻 —— 那是 step 之后、下一帧之前。这里一清，武器卡的
 	# 事件就被下一帧的 step 吞掉，玩家永远看不到武器知识卡（2026-09-17 实测）。
 	# 所以它是一条靠消费方清空的队列，见 KnowledgeUI 的投递处。
+	# 上限只是防内存无上限增长（没人消费时的兜底）。用截断而不是 clear：
+	# 全清会连玩家还没看到的知识卡一起丢掉，等于那一课白触发了。
 	if card_events.size() > 64:
-		card_events.clear()
+		card_events = card_events.slice(card_events.size() - 32)
 
 	_update_trait(dt)
 	_move_player(dt, dir_x, dir_y)
@@ -341,7 +348,9 @@ func _move_enemies(dt: float) -> void:
 		# 否则解冻的瞬间全场精英会集体放招，控制反而变成惩罚。
 		# 动画也定格：定格本身就是在告诉玩家"它被暂停了"。
 		if e.freeze[i] > 0.0:
-			e.freeze[i] -= dt
+			# 夹回 0：否则最后一次递减会留下 -0.0067 之类的负值，
+			# 它永远卡在负数上（上面的判断进不来），打印出来像「冻了负数秒」。
+			e.freeze[i] = maxf(0.0, e.freeze[i] - dt)
 			i += 1
 			continue
 
@@ -663,6 +672,10 @@ func _boss_summon_tick(dt: float, boss_idx: int, boss_type: int) -> void:
 ## 倒序回收：配合 swap_remove，被搬过来的元素本帧不再检查（延迟一帧，无影响）
 func _reap() -> void:
 	var e := enemies
+	# 类型下标在循环外算一次。idx_of 是遍历整张表比字符串，
+	# 而这里是"每死一个敌人都要比两遍"——峰值一帧回收上千只时是纯粹的白烧。
+	var boss_i := EnemyDB.idx_of(EnemyDB.BOSS_ID)
+	var elite_i := EnemyDB.idx_of(EnemyDB.ELITE_ID)
 	var i := e.count - 1
 	while i >= 0:
 		if e.hp[i] <= 0.0:
@@ -675,7 +688,7 @@ func _reap() -> void:
 			# 经验按类型给：精英 20 点、大怪 3~4 点，杂兵 1 点。
 			# 掉落价值必须跟"杀它花的功夫"成正比，否则玩家没有打精英的动力。
 			gems.spawn(e.px[i], e.py[i], EnemyDB.DEFS[ti].xp)
-			if ti == EnemyDB.idx_of(EnemyDB.BOSS_ID):
+			if ti == boss_i:
 				# 终局奖励：经验宝石 + 三个宝箱（回血够玩家撑过庆祝时刻）
 				for k in 3:
 					_drop_heal(
@@ -686,7 +699,7 @@ func _reap() -> void:
 				victory = true
 				boss_active = false
 				boss_hp = 0.0
-			elif ti == EnemyDB.idx_of(EnemyDB.ELITE_ID):
+			elif ti == elite_i:
 				# 精英必掉宝箱（D 方案）。位置随机偏一点，别和宝石完全重叠。
 				_drop_heal(
 					e.px[i] + randf_range(-8.0, 8.0),

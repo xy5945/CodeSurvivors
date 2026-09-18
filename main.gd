@@ -101,6 +101,12 @@ func _ready() -> void:
 		get_tree().quit()
 		return
 
+	if OS.get_cmdline_user_args().has("--diagboss"):
+		set_process(false)
+		Bench.run_diag_boss()
+		get_tree().quit()
+		return
+
 	# --smoke 可带分钟数：--smoke=20（跑到 18 分钟验证 Boss 自然出场）
 	for a in OS.get_cmdline_user_args():
 		if a.begins_with("--smoke"):

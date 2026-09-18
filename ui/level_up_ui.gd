@@ -103,11 +103,17 @@ func _roll() -> void:
 	else:
 		_hint.text = "用鼠标点一张卡 · 游戏已暂停，不用着急"
 
+	# 选项可能不足 3 个（武器和被动全满级时，兜底只给一张紧急补丁）。
+	# 以前这里直接 choices[i]，少一个就数组越界 —— 多出来的卡位藏起来就行，
+	# HBoxContainer 是居中对齐的，剩一张时它会自己在中间。
 	var i := 0
 	while i < _cards.size():
-		var c: Dictionary = choices[i]
-		_cards[i].setup(c["def"], int(c["level"]))
-		_cards[i].visible = true
+		if i < choices.size():
+			var c: Dictionary = choices[i]
+			_cards[i].setup(c["def"], int(c["level"]))
+			_cards[i].visible = true
+		else:
+			_cards[i].visible = false
 		i += 1
 
 

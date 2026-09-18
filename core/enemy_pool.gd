@@ -27,6 +27,10 @@ var radius := PackedFloat32Array()
 var flash := PackedFloat32Array()   # 受击闪白剩余时间
 var orb_cd := PackedFloat32Array()  # 循环护盾的独立受击冷却（每个敌人独立计时）
 var mark := PackedFloat32Array()    # 指针追踪的标记剩余时间：>0 时受到的所有伤害 +10%
+# 控制抗性：冻结时长的倍率，越小越抗控（杂兵 1.0 / 精英 0.5 / Boss 0.18）。
+# 放池里而不是让武器自己判断类型，是因为「谁能被控多久」是敌人的属性，
+# 将来加新控制手段（减速、眩晕）直接读这个字段就行，不用每个武器都抄一遍类型判断。
+var cc_res := PackedFloat32Array()
 # 断点调试的冻结剩余时间：>0 时敌人完全不动、技能不放。
 # 冻结同时附带 +50% 易伤（见 dmg_mult）—— 只冻不打等于浪费一次控制，
 # 玩家会觉得"这把武器没伤害"，所以控制和增伤必须绑在一起。
@@ -63,6 +67,7 @@ func _init(cap: int) -> void:
 	flash.resize(cap)
 	orb_cd.resize(cap)
 	mark.resize(cap)
+	cc_res.resize(cap)
 	freeze.resize(cap)
 	anim.resize(cap)
 	type.resize(cap)
@@ -91,6 +96,7 @@ func spawn(x: float, y: float, hp_v: float, spd_v: float, rad_v: float, type_v: 
 	orb_cd[count] = 0.0
 	mark[count] = 0.0
 	freeze[count] = 0.0
+	cc_res[count] = float(EnemyDB.DEFS[type_v].get("cc_res", 1.0))
 	anim[count] = randf() * float(FRAMES)
 	type[count] = type_v
 	skill_cd[count] = 3.0 + randf() * 2.0    # 出生先普走几秒，技能别开场就放
@@ -118,6 +124,7 @@ func kill(i: int) -> void:
 		orb_cd[i] = orb_cd[last]
 		mark[i] = mark[last]
 		freeze[i] = freeze[last]
+		cc_res[i] = cc_res[last]
 		anim[i] = anim[last]
 		type[i] = type[last]
 		skill_cd[i] = skill_cd[last]

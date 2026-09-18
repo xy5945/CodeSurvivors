@@ -259,6 +259,11 @@ func roll_choices(n: int) -> Array:
 		out.append({"def": pool[0], "level": level_of(str(pool[0]["id"])) + 1})
 		pool.remove_at(0)
 
-	while out.size() < n:
+	# 兜底只补**一张**紧急补丁。
+	# 曾经这里是「补到 n 张为止」，于是武器和被动全满级时会弹出三张一模一样的
+	# 紧急补丁（--uitest 实测）—— 玩家第一反应是「是不是卡 bug 了」。
+	# 三选一是给玩家做取舍的，凑不出三个选项就该老老实实只给一个，
+	# 弹窗那边会把多余的两个卡位隐藏掉（见 LevelUpUI._roll）。
+	if out.is_empty():
 		out.append({"def": UpgradeDefs.HEAL_PICK, "level": 1})
 	return out

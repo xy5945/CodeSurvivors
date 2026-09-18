@@ -60,12 +60,19 @@ static func is_heal(k: int) -> bool:
 ## 返回是否真的落位成功 —— sim 靠它维护地面回血物计数。
 func spawn_chest(x: float, y: float) -> bool:
 	if count >= px.size():
+		# 顶掉 0 号槽之前先看它是什么：如果它本身也是回血物（补丁包 / 宝箱），
+		# 那地面上的回血物总数**没有变多**，就不能回报"新增了一个"。
+		# 以前这里无条件 return true，sim 那边 heal_on_ground 就只增不减，
+		# 累积几次之后顶到 MAX_HEAL_ON_GROUND，_drop_heal 从此提前 return ——
+		# 之后精英该掉的宝箱、杂兵该掉的补丁包全被静默吞掉，玩家只会觉得
+		# "这局怎么不掉血包了"。只有顶掉的是普通宝石才算真正多出一个回血物。
+		var net_new := not is_heal(kind[0])
 		px[0] = x
 		py[0] = y
 		value[0] = 0
 		mag[0] = 0
 		kind[0] = KIND_CHEST
-		return true
+		return net_new
 	return spawn(x, y, 0, KIND_CHEST)
 
 
