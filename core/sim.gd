@@ -25,6 +25,22 @@ var bullets: EnemyBulletPool
 var hazards: HazardStore
 var attack: EnemyAttackSystem
 
+# ---- 角色 ----
+# 角色是"起始武器 + 属性修正 + 一条特性"的组合（见 core/char_defs.gd）。
+# 特性相关的计数放在这里而不是武器里 —— 它影响的是全局（全部武器冷却 / 全局回血）。
+var char_id := CharDefs.DEFAULT_ID
+var char_def: Dictionary
+var char_trait := CharDefs.T_LEARN
+var char_hp_mult := 1.0       # 角色属性修正（乘算，见 char_defs）
+var char_speed_mult := 1.0
+var iframe_mult := 1.0        # 测试工程师：受击后的无敌时间倍率
+var _cron_timer := 0.0        # 运维工程师：定时任务计时
+var _recur_streak := 0        # 算法工程师：距下次全武器刷新的击杀数
+# 特性触发次数（测试断言用，也方便以后做结算统计）
+var recur_procs := 0
+var cron_procs := 0
+var learn_bonus := 0
+
 # ---- 玩家 ----
 var player_x := 0.0
 var player_y := 0.0
@@ -95,7 +111,7 @@ var spawn_enabled := true
 var god_mode := false
 
 
-func setup() -> void:
+func setup(cid := CharDefs.DEFAULT_ID) -> void:
 	enemies = EnemyPool.new(GameConfig.MAX_ENEMIES)
 	gems = GemPool.new(GameConfig.MAX_GEMS)
 	grid = SpatialGrid.new()
@@ -109,7 +125,21 @@ func setup() -> void:
 	hazards = HazardStore.new()
 	attack = EnemyAttackSystem.new()
 
-	loadout.setup()
+	# 角色：先定角色再建 loadout —— 起始武器由角色决定
+	char_def = CharDefs.def_of(cid)
+	if char_def.is_empty():
+		char_def = CharDefs.def_of(CharDefs.DEFAULT_ID)
+	char_id = str(char_def["id"])
+	char_trait = int(char_def["trait"])
+	iframe_mult = CharDefs.BREAK_IFRAME_MULT if char_trait == CharDefs.T_BREAK else 1.0
+
+	char_hp_mult = float(char_def["hp_mult"])
+	char_speed_mult = float(char_def["speed_mult"])
+	loadout.char_dmg_mult = float(char_def["dmg_mult"])
+	loadout.char_cd_mult = float(char_def["cd_mult"])
+	loadout.char_pickup_mult = float(char_def["pickup_mult"])
+	loadout.char_trait = char_trait
+	loadout.setup(str(char_def["start"]))
 	_refresh_max_hp()
 	player_hp = max_hp
 	exp_next = UpgradeDefs.exp_to_next(1)
@@ -131,6 +161,7 @@ func step(dt: float, dir_x: float, dir_y: float) -> void:
 	if card_events.size() > 64:
 		card_events.clear()
 
+	_update_trait(dt)
 	_move_player(dt, dir_x, dir_y)
 	if spawn_enabled:
 		spawn.update(dt, self)
@@ -166,7 +197,7 @@ func _move_player(dt: float, dir_x: float, dir_y: float) -> void:
 		var inv := 1.0 / sqrt(len_sq)
 		facing_x = dir_x * inv
 		facing_y = dir_y * inv
-		var spd := GameConfig.PLAYER_SPEED * loadout.move_speed_mult * dt
+		var spd := GameConfig.PLAYER_SPEED * loadout.move_speed_mult * char_speed_mult * dt
 		player_x += facing_x * spd
 		player_y += facing_y * spd
 
@@ -183,7 +214,7 @@ func hurt_player(v: float) -> bool:
 	if dead or god_mode or iframe > 0.0:
 		return false
 	_apply_player_damage(v)
-	iframe = GameConfig.PLAYER_IFRAME
+	iframe = GameConfig.PLAYER_IFRAME * iframe_mult
 	return true
 
 
@@ -263,7 +294,7 @@ func apply_heal_pick(amount: float) -> void:
 
 
 func _refresh_max_hp() -> void:
-	max_hp = GameConfig.PLAYER_MAX_HP + loadout.max_hp_bonus
+	max_hp = (GameConfig.PLAYER_MAX_HP + loadout.max_hp_bonus) * char_hp_mult
 
 
 ## 记一张"首次遇到这种敌人"的知识卡。
@@ -533,6 +564,28 @@ func _cast(i: int, e: EnemyPool, is_boss: bool, skill: String) -> float:
 	return 1.0
 
 
+## 角色特性：定时自愈（运维工程师）。
+func _update_trait(dt: float) -> void:
+	if char_trait != CharDefs.T_CRON:
+		return
+	_cron_timer += dt
+	if _cron_timer >= CharDefs.CRON_INTERVAL:
+		_cron_timer -= CharDefs.CRON_INTERVAL
+		heal_player(max_hp * CharDefs.CRON_HEAL_FRAC)
+		cron_procs += 1
+
+
+## 角色特性：递归返回（算法工程师）—— 每 N 杀把全部武器冷却清零。
+func _on_kill() -> void:
+	if char_trait != CharDefs.T_RECUR:
+		return
+	_recur_streak += 1
+	if _recur_streak >= CharDefs.RECUR_KILLS:
+		_recur_streak = 0
+		recur_procs += 1
+		loadout.reset_weapon_cooldowns()
+
+
 func _count_skill(is_boss: bool, name: String) -> void:
 	if is_boss:
 		boss_skills += 1
@@ -651,6 +704,7 @@ func _reap() -> void:
 				)
 			e.kill(i)
 			kills += 1
+			_on_kill()
 		i -= 1
 
 
@@ -760,3 +814,8 @@ func _collect_gem(i: int) -> void:
 		level += 1
 		exp_next = UpgradeDefs.exp_to_next(level)
 		pending_levelups += 1
+		# 实习生「边学边练」：每 10 级多给一次三选一。
+		# 它换的是成长速度而不是强度 —— 后期 Build 能多成型一张牌。
+		if char_trait == CharDefs.T_LEARN and level % CharDefs.LEARN_EVERY == 0:
+			pending_levelups += 1
+			learn_bonus += 1

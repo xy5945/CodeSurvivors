@@ -20,6 +20,7 @@ extends Node2D
 @onready var level_up: LevelUpUI = $LevelUpUI
 @onready var knowledge: KnowledgeUI = $KnowledgeUI
 @onready var result: ResultUI = $ResultUI
+@onready var char_select: CharSelectUI = $CharSelectUI
 @onready var vignette: DamageVignette = $DamageVignette
 
 var sim: Sim
@@ -123,7 +124,7 @@ func _ready() -> void:
 	Input.set_mouse_mode(Input.MOUSE_MODE_HIDDEN)
 
 	sim = Sim.new()
-	sim.setup()
+	sim.setup(_cmd_char())
 
 	# --pos=<x>,<y>：把玩家挪到指定坐标再开局，配合 --shot 截特定位置的画面
 	#（例如 --pos=1340,0 截边界墙）。只影响开局位置，不参与正式玩法。
@@ -136,7 +137,7 @@ func _ready() -> void:
 
 	enemy_renderer.setup(GameConfig.MAX_ENEMIES)
 	gem_renderer.setup(GameConfig.MAX_GEMS)
-	player_view.setup()
+	player_view.setup(sim.char_def["color"])
 	orbit_renderer.setup()
 	projectile_renderer.setup(GameConfig.MAX_PROJECTILES)
 	enemy_bullet_renderer.setup(GameConfig.MAX_ENEMY_BULLETS)
@@ -148,6 +149,7 @@ func _ready() -> void:
 	level_up.resolved.connect(_on_levelup_resolved)
 	result.restart_requested.connect(_on_restart)
 	result.quit_requested.connect(_on_quit)
+	char_select.selected.connect(_on_char_selected)
 
 	camera.position = Vector2(sim.player_x, sim.player_y)
 	_sync_player(0.0, false)
@@ -207,9 +209,27 @@ func _ready() -> void:
 			get_tree().quit()
 			return
 
+	# --charshot[=<角色id>]：开选人界面截图（选人会暂停整棵树，
+	# --shot 的倒计时跑不动，所以和结算一样单独给一条路径）
+	for a in OS.get_cmdline_user_args():
+		if a.begins_with("--charshot"):
+			var cid := a.split("=")[-1] if "=" in a else ""
+			char_select.open(cid)
+			await RenderingServer.frame_post_draw
+			await RenderingServer.frame_post_draw
+			_save_shot()
+			get_tree().quit()
+			return
+
 	if OS.get_cmdline_user_args().has("--evotest"):
 		set_process(false)
 		Bench.run_evo()
+		get_tree().quit()
+		return
+
+	if OS.get_cmdline_user_args().has("--chartest"):
+		set_process(false)
+		Bench.run_char()
 		get_tree().quit()
 		return
 
@@ -264,6 +284,41 @@ func _ready() -> void:
 							sim.player_y + sin(ang) * 90.0,
 							d.hp, 0.0, d.radius, ei
 						)
+
+	# 正常开局（一个命令行参数都没有）→ 先选角色再开打。
+	# 带参数的启动一律直接开局：headless 测试和截图流程不能被弹窗挡住。
+	if OS.get_cmdline_user_args().is_empty():
+		char_select.open()
+
+
+## --char=<角色id>：跳过选人直接开局（测试与截图用）。
+func _cmd_char() -> String:
+	for a in OS.get_cmdline_user_args():
+		if a.begins_with("--char="):
+			return a.substr(7)
+	return CharDefs.DEFAULT_ID
+
+
+## 换角色后重建一局。只有真的换了角色才需要重建 ——
+## 选人界面默认就停在上一局那个角色上，直接确认时什么都不用做。
+func _on_char_selected(cid: String) -> void:
+	if cid == sim.char_id:
+		return
+	sim = Sim.new()
+	sim.setup(cid)
+	fx_renderer.sim = sim
+	aura_renderer.sim = sim
+	bolt_renderer.sim = sim
+	whip_arc.sim = sim
+	level_up.sim = sim
+	player_view.setup(sim.char_def["color"])
+	knowledge.debug_reset()
+	for id in sim.loadout.levels:
+		if sim.loadout.level_of(id) > 0:
+			knowledge.push(id)
+	knowledge.push("gem")
+	camera.position = Vector2(sim.player_x, sim.player_y)
+	_sync_player(0.0, false)
 
 
 ##

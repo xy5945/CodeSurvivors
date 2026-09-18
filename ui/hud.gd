@@ -140,6 +140,10 @@ func update_stats(delta: float, sim: Sim) -> void:
 			"  [静音 · M]" if Sfx.is_muted() else ""
 		]
 
+	# 角色名挂在这行末尾：它整局不变，但玩家一抬头就该知道自己在玩谁
+	if not sim.char_def.is_empty():
+		_info.text += "  " + str(sim.char_def["name"])
+
 	# Build 摘要每秒刷一次就够
 	if _slow_acc >= 1.0:
 		_slow_acc = 0.0

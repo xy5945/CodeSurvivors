@@ -1,4 +1,4 @@
-[gd_scene load_steps=18 format=3]
+[gd_scene load_steps=19 format=3]
 
 [ext_resource type="Script" path="res://main.gd" id="1_main"]
 [ext_resource type="Script" path="res://render/enemy_renderer.gd" id="2_er"]
@@ -17,6 +17,7 @@
 [ext_resource type="Script" path="res://ui/knowledge_ui.gd" id="15_kb"]
 [ext_resource type="Script" path="res://ui/result_ui.gd" id="16_res"]
 [ext_resource type="Script" path="res://render/aura_renderer.gd" id="17_aura"]
+[ext_resource type="Script" path="res://ui/char_select_ui.gd" id="18_char"]
 
 [node name="Main" type="Node2D"]
 script = ExtResource("1_main")
@@ -75,3 +76,7 @@ layer = 10
 [node name="ResultUI" type="CanvasLayer" parent="."]
 script = ExtResource("16_res")
 layer = 20
+
+[node name="CharSelectUI" type="CanvasLayer" parent="."]
+script = ExtResource("18_char")
+layer = 30

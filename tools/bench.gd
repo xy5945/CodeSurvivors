@@ -528,6 +528,155 @@ static func run_evo() -> void:
 
 
 ## 建一把满级武器 + 指定满级被动，可选是否完成进化
+## 角色系统自检。运行：godot --headless --path . -- --chartest
+static func run_char() -> void:
+	print("")
+	print("=== 角色系统 · 机制测试 ===")
+	print("角色 = 起始武器 + 属性修正 + 一条特性，这里逐条验证三者都真的生效")
+	print("")
+	_t_char_data()
+	_t_char_start()
+	_t_char_stats()
+	_t_char_module()
+	_t_char_cron()
+	_t_char_break()
+	_t_char_recur()
+	_t_char_learn()
+	print("")
+
+
+static func _ok(b: bool) -> String:
+	return "OK" if b else "FAIL"
+
+
+## 建一局指定角色的干净局：不开刷怪（避免敌人乱入计数）、默认无敌。
+static func _charmk(cid: String, god: bool = true) -> Sim:
+	var sim := Sim.new()
+	sim.setup(cid)
+	sim.god_mode = god
+	sim.spawn_enabled = false
+	return sim
+
+
+## 1 数据表：起始武器必须是武器 —— 写成被动的话开局就是空手
+static func _t_char_data() -> void:
+	var bad := 0
+	for c in CharDefs.CHARACTERS:
+		var wd := UpgradeDefs.def_of(str(c["start"]))
+		if wd.is_empty() or int(wd["kind"]) != UpgradeDefs.KIND_WEAPON:
+			bad += 1
+	print("  1 数据表 · %d 个角色起始武器均为武器 · %s" % [
+		CharDefs.CHARACTERS.size(), _ok(bad == 0)])
+
+
+## 2 起始武器：等级表里有、武器实例也真的建出来了
+static func _t_char_start() -> void:
+	var bad := 0
+	var txt: Array[String] = []
+	for c in CharDefs.CHARACTERS:
+		var sim := _charmk(str(c["id"]))
+		var sid := str(c["start"])
+		if sim.loadout.level_of(sid) != 1 or sim.loadout.weapon_map.get(sid) == null:
+			bad += 1
+		txt.append("%s-%s" % [c["name"], UpgradeDefs.def_of(sid)["name"]])
+	print("  2 起始武器 · %s · %s" % [" ".join(PackedStringArray(txt)), _ok(bad == 0)])
+
+
+## 3 属性修正：生命 / 拾取 / 移速
+static func _t_char_stats() -> void:
+	var base := _charmk("intern")
+	var ops := _charmk("ops")
+	var arch := _charmk("arch")
+	var qa := _charmk("qa")
+	var ok_hp := absf(base.max_hp - 100.0) < 0.01 and absf(ops.max_hp - 125.0) < 0.01
+	var ok_pick := absf(arch.loadout.pickup_range - 95.0 * 1.4) < 0.01
+	var ok_spd := absf(qa.char_speed_mult - 1.08) < 0.001 and absf(base.char_speed_mult - 1.0) < 0.001
+	print("  3 属性修正 · 生命 %.0f→%.0f · 拾取 %.0f · 移速 x%.2f · %s" % [
+		base.max_hp, ops.max_hp, arch.loadout.pickup_range, qa.char_speed_mult,
+		_ok(ok_hp and ok_pick and ok_spd)])
+
+
+## 4 模块堆叠（架构师）：伤害随武器数量涨，不是固定值
+static func _t_char_module() -> void:
+	var arch := _charmk("arch")
+	var d1: float = arch.loadout.damage_mult
+	arch.loadout.apply_upgrade("whip")
+	arch.loadout.apply_upgrade("blade")
+	var d3: float = arch.loadout.damage_mult
+	var base := _charmk("intern")
+	base.loadout.apply_upgrade("whip")
+	base.loadout.apply_upgrade("blade")
+	var b3: float = base.loadout.damage_mult
+	var ok := absf(d1 - 1.05) < 0.001 and absf(d3 - 1.15) < 0.001 and absf(b3 - 1.0) < 0.001
+	print("  4 模块堆叠 · 架构师 1 把 x%.2f → 3 把 x%.2f（普通角色 x%.2f）· %s" % [
+		d1, d3, b3, _ok(ok)])
+
+
+## 5 定时自愈（运维工程师）：到点回一次血，其他角色没有
+static func _t_char_cron() -> void:
+	var steps := int(26.0 / GameConfig.FIXED_DT)
+	var ops := _charmk("ops")
+	ops.player_hp = 50.0
+	for i in steps:
+		ops.step(GameConfig.FIXED_DT, 0.0, 0.0)
+	var base := _charmk("intern")
+	base.player_hp = 50.0
+	for i in steps:
+		base.step(GameConfig.FIXED_DT, 0.0, 0.0)
+	var ok := ops.cron_procs == 1 and ops.player_hp > 50.0 		and base.cron_procs == 0 and absf(base.player_hp - 50.0) < 0.001
+	print("  5 定时自愈 · 运维 26 秒触发 %d 次 HP %.1f（实习生 %d 次 HP %.1f）· %s" % [
+		ops.cron_procs, ops.player_hp, base.cron_procs, base.player_hp, _ok(ok)])
+
+
+## 6 断点暂停（测试工程师）：接触伤害的无敌帧翻倍，弹幕不跟着翻
+static func _t_char_break() -> void:
+	var qa := _charmk("qa", false)
+	qa.hurt_player(10.0)
+	var base := _charmk("intern", false)
+	base.hurt_player(10.0)
+	var qb := _charmk("qa", false)
+	qb.hurt_player_bullet(5.0)
+	var ok := absf(qa.iframe - 1.2) < 0.001 and absf(base.iframe - 0.6) < 0.001 		and absf(qb.bullet_iframe - GameConfig.BULLET_IFRAME) < 0.001
+	print("  6 断点暂停 · 无敌帧 %.2f（普通 %.2f）· 弹幕仍 %.2f · %s" % [
+		qa.iframe, base.iframe, qb.bullet_iframe, _ok(ok)])
+
+
+## 7 递归返回（算法工程师）：每 60 杀把全部武器冷却清零
+static func _t_char_recur() -> void:
+	var algo := _charmk("algo")
+	for i in 60:
+		algo.enemies.spawn(algo.player_x + 400.0, algo.player_y, 0.0, 0.0, 7.0, 0)
+	algo.step(GameConfig.FIXED_DT, 0.0, 0.0)
+	var cd: float = algo.loadout.weapon_map["blade"].cooldown
+	var base := _charmk("intern")
+	for i in 60:
+		base.enemies.spawn(base.player_x + 400.0, base.player_y, 0.0, 0.0, 7.0, 0)
+	base.step(GameConfig.FIXED_DT, 0.0, 0.0)
+	var ok := algo.kills == 60 and algo.recur_procs == 1 and cd <= 0.001 		and base.recur_procs == 0
+	print("  7 递归返回 · 60 杀触发 %d 次、飞刃冷却归零 %.3f（普通 %d 次）· %s" % [
+		algo.recur_procs, cd, base.recur_procs, _ok(ok)])
+
+
+## 吃一颗刚好够升一级的经验宝石。
+static func _level_once(sim: Sim) -> void:
+	sim.gems.spawn(sim.player_x, sim.player_y, int(sim.exp_next) + 1, 0)
+	sim.step(GameConfig.FIXED_DT, 0.0, 0.0)
+
+
+## 8 边学边练（实习生）：每 10 级多一次三选一
+static func _t_char_learn() -> void:
+	var it := _charmk("intern")
+	for i in 9:
+		_level_once(it)
+	var algo := _charmk("algo")
+	for i in 9:
+		_level_once(algo)
+	var ok := it.level == 10 and it.learn_bonus == 1 and it.pending_levelups == 10 		and algo.level == 10 and algo.learn_bonus == 0 and algo.pending_levelups == 9
+	print("  8 边学边练 · 实习生 Lv%d 升级次数 %d（+%d）· 其他角色 Lv%d 升级次数 %d · %s" % [
+		it.level, it.pending_levelups, it.learn_bonus,
+		algo.level, algo.pending_levelups, _ok(ok)])
+
+
 static func _evomk(wid: String, passive: String = "", evolved: bool = true,
 		god: bool = true) -> Sim:
 	var sim := _w6mk(wid, god)

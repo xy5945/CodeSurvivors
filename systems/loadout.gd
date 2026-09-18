@@ -44,10 +44,26 @@ var damage_mult := 1.0
 var cooldown_mult := 1.0
 var pickup_range := GameConfig.PICKUP_RANGE
 
+# ---- 角色修正（由 sim.setup 注入，见 core/char_defs.gd）----
+# 放在 loadout 里是因为武器数值在 apply_stats 时就要用到它，
+# 而 apply_stats 只拿得到 loadout。
+var char_dmg_mult := 1.0
+var char_cd_mult := 1.0
+var char_pickup_mult := 1.0
+var char_trait := CharDefs.T_LEARN
 
-func setup() -> void:
-	levels["whip"] = 1          # 起始武器：分支长鞭 Lv1
+
+func setup(start_weapon := "whip") -> void:
+	levels[start_weapon] = 1    # 起始武器由角色决定
 	recompute()
+
+
+## 全部武器立刻冷却完毕（算法工程师「递归返回」）。
+## 只清真实存在的实例：环绕类和力场类没有冷却字段，跳过即可。
+func reset_weapon_cooldowns() -> void:
+	for w in weapons:
+		if "cooldown" in w:
+			w.cooldown = 0.0
 
 
 func level_of(id: String) -> int:
@@ -122,7 +138,19 @@ func recompute() -> void:
 			if s.has("cooldown"):
 				cooldown_mult *= float(s["cooldown"])
 
-	pickup_range = GameConfig.PICKUP_RANGE * pickup_range_mult
+	# 角色修正：被动加成算完再乘，这样"被动 + 角色"是叠乘而不是互相覆盖
+	damage_mult *= char_dmg_mult
+	cooldown_mult *= char_cd_mult
+	# 架构师「模块堆叠」：每多一把武器，伤害再 +5%。
+	# 它奖励的是"铺开拿武器"而不是"死堆一把"，和被动的线性加成不是一回事。
+	if char_trait == CharDefs.T_MODULE:
+		var wcount := 0
+		for id in levels:
+			if level_of(id) > 0 and int(UpgradeDefs.def_of(id)["kind"]) == UpgradeDefs.KIND_WEAPON:
+				wcount += 1
+		damage_mult += CharDefs.MODULE_DMG * float(wcount)
+
+	pickup_range = GameConfig.PICKUP_RANGE * pickup_range_mult * char_pickup_mult
 
 	for id in levels:
 		var lv := level_of(id)

@@ -18,9 +18,13 @@ const ANIM_RATE := 10.0
 const OFFSET_Y := -4.0
 
 var _phase := 0.0
+# 角色配色：五个角色共用一张贴图，靠染色区分（另做五套素材不划算）。
+# 白（1,1,1）= 不改色，早期只有一种角色时就是这个值。
+var _tint := Color(1.0, 1.0, 1.0)
 
 
-func setup() -> void:
+func setup(tint := Color(1.0, 1.0, 1.0)) -> void:
+	_tint = tint
 	texture = load(FRAME_PATH)
 	hframes = WALK_FRAMES
 	vframes = 1
@@ -42,4 +46,4 @@ func update_view(dt: float, moving: bool, facing_x: float, iframe: float) -> voi
 
 	flip_h = facing_x < 0.0
 	# 无敌帧闪烁：受伤后短暂半透明，让玩家知道"现在打不到我"
-	modulate.a = 0.45 if iframe > 0.0 else 1.0
+	modulate = Color(_tint.r, _tint.g, _tint.b, 0.45 if iframe > 0.0 else 1.0)

@@ -78,6 +78,7 @@ func _fill_rows(sim: Sim, unlocked: int, total: int) -> void:
 	for c in _rows.get_children():
 		c.free()
 
+	_row("角色", _char_text(sim))
 	_row("用时", _fmt(sim.time))
 	_row("消灭 Bug", "%d 个" % sim.kills)
 	_row("等级", "Lv %d" % sim.level)
@@ -116,6 +117,14 @@ func _build_text(sim: Sim) -> String:
 	if parts.is_empty():
 		return "Build：无（没拿到任何升级）"
 	return "Build：" + "   ".join(parts)
+
+
+## 角色 + 它的编程概念。结算里留这一行，是因为不同角色的成绩不该直接横向比 ——
+## 运维的续航和测试的容错，本来就不是同一种打法。
+func _char_text(sim: Sim) -> String:
+	if sim.char_def.is_empty():
+		return "—"
+	return "%s（%s）" % [sim.char_def["name"], sim.char_def["term"]]
 
 
 func _fmt(t: float) -> String:
