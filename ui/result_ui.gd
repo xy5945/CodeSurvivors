@@ -81,7 +81,7 @@ func _fill_rows(sim: Sim, unlocked: int, total: int) -> void:
 	_row("用时", _fmt(sim.time))
 	_row("消灭 Bug", "%d 个" % sim.kills)
 	_row("等级", "Lv %d" % sim.level)
-	_row("内存资源", "%d" % sim.gems_collected)
+	_row("变量", "%d" % sim.gems_collected)
 	_row("补丁包 / 宝箱", "%d / %d" % [sim.patches_collected, sim.chests_collected])
 	_row("知识卡解锁", "%d / %d" % [unlocked, total])
 

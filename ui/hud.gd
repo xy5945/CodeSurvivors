@@ -126,15 +126,15 @@ func update_stats(delta: float, sim: Sim) -> void:
 	_lv_label.text = "Lv %d" % sim.level
 
 	if sim.dead:
-		_info.text = "FPS %d  击杀 %d  存活 %s\n程序已崩溃 (Fatal Error)" % [
+		_info.text = "FPS %d  消灭Bug %d  存活 %s\n程序已崩溃 (Fatal Error)" % [
 			int(_fps), sim.kills, _fmt_time(sim.time)
 		]
 	elif sim.victory:
-		_info.text = "FPS %d  击杀 %d  通关用时 %s\nBUILD SUCCESSFUL · 编译成功" % [
+		_info.text = "FPS %d  消灭Bug %d  通关用时 %s\nBUILD SUCCESSFUL · 编译成功" % [
 			int(_fps), sim.kills, _fmt_time(sim.time)
 		]
 	else:
-		_info.text = "FPS %d  敌人 %d  击杀 %d  HP %d/%d  %s%s" % [
+		_info.text = "FPS %d  敌人 %d  消灭Bug %d  HP %d/%d  %s%s" % [
 			int(_fps), sim.enemies.count, sim.kills,
 			int(sim.player_hp), int(sim.max_hp), _fmt_time(sim.time),
 			"  [静音 · M]" if Sfx.is_muted() else ""
