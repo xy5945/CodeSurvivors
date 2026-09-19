@@ -10,6 +10,12 @@ extends RefCounted
 ##   name    显示名
 ##   icon    语法符号（卡片上的大字符）
 ##   sub     代码注释风格的一句话，是主题感最强的地方
+##   char    可选：专属角色 id。写了就只有该角色能拿到这把武器
+##           （见 can_use）。5 个角色的起始武器都带这个键 ——
+##           角色 = 开局打法，专属武器就是这份"打法差异"的载体：
+##           实习生是先手近战，测试工程师是控制，算法工程师是远程穿透，
+##           全栈工程师是贴身力场，架构师是环绕防御。
+##           其他人拿不到，才不会出现"选谁最后都玩成同一套 build"。
 ##   max     满级
 ##   levels  长度为 max 的数组，索引 i = 升到 (i+1) 级时的效果
 ##
@@ -42,6 +48,7 @@ const UPGRADES := [
 	# ================= 武器 =================
 	{
 		"id": "whip", "kind": KIND_WEAPON, "name": "分支长鞭", "icon": "if",
+		"char": "intern",
 		"sub": "// 条件成立，就往这一边抽下去",
 		"max": 8,
 		"levels": [
@@ -57,6 +64,7 @@ const UPGRADES := [
 	},
 	{
 		"id": "orbit", "kind": KIND_WEAPON, "name": "循环护盾", "icon": "for",
+		"char": "arch",
 		"sub": "// 同样的事，一直做下去",
 		"max": 8,
 		"levels": [
@@ -103,6 +111,7 @@ const UPGRADES := [
 	},
 	{
 		"id": "blade", "kind": KIND_WEAPON, "name": "递归飞刃", "icon": "rec()",
+		"char": "algo",
 		"sub": "// 每一次调用，都会分裂出一个更弱的自己",
 		"max": 8,
 		"levels": [
@@ -179,6 +188,7 @@ const UPGRADES := [
 	},
 	{
 		"id": "breakpoint", "kind": KIND_WEAPON, "name": "断点调试", "icon": "break",
+		"char": "qa",
 		"sub": "// 先停一下，看看出了什么事",
 		"max": 8,
 		"levels": [
@@ -194,6 +204,7 @@ const UPGRADES := [
 	},
 	{
 		"id": "forever", "kind": KIND_WEAPON, "name": "永真力场", "icon": "loop",
+		"char": "ops",
 		"sub": "// while(true) —— 永远不停，直到没电",
 		"max": 8,
 		"levels": [
@@ -301,6 +312,23 @@ static func stats_for(id: String, level: int) -> Dictionary:
 		if u["id"] == id:
 			return u["levels"][mini(level, u["levels"].size()) - 1]
 	return {}
+
+
+## 这把武器的专属角色 id；不是专属武器时返回空串。
+static func owner_of(id: String) -> String:
+	return str(def_of(id).get("char", ""))
+
+
+static func is_exclusive(id: String) -> bool:
+	return owner_of(id) != ""
+
+
+## 该角色能不能拿到这把武器。唯一过滤点 —— 升级三选一走它，
+## 所以"别人拿不到专属武器"只需要在这一个地方成立，
+## 不用在每个可能出现武器的地方各写一遍判断。
+static func can_use(id: String, char_id: String) -> bool:
+	var own := owner_of(id)
+	return own == "" or own == char_id
 
 
 static func def_of(id: String) -> Dictionary:

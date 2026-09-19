@@ -542,6 +542,7 @@ static func run_char() -> void:
 	_t_char_break()
 	_t_char_recur()
 	_t_char_learn()
+	_t_char_exclusive()
 	print("")
 
 
@@ -680,6 +681,44 @@ static func _t_char_learn() -> void:
 	print("  8 边学边练 · 实习生 Lv%d 升级次数 %d（+%d）· 其他角色 Lv%d 升级次数 %d · %s" % [
 		it.level, it.pending_levelups, it.learn_bonus,
 		algo.level, algo.pending_levelups, _ok(ok)])
+
+
+## 9 专属武器：每个角色的起始武器只属于他自己，别人的专属武器永不出现在三选一
+static func _t_char_exclusive() -> void:
+	# 先查数据表：每个角色的起始武器必须标成"该角色专属"，
+	# 否则过滤逻辑写得再对也没东西可拦。
+	var bad_data := 0
+	for c in CharDefs.CHARACTERS:
+		if UpgradeDefs.owner_of(str(c["start"])) != str(c["id"]):
+			bad_data += 1
+
+	# 每个角色各抽 400 次三选一，统计出现了哪些武器。
+	# 400 次是拍的：池子每次洗牌后取前三，8 把可选武器抽 400 次，
+	# 任何一把漏网的概率已经小到可以认为是 0。
+	var leaked := 0
+	var own_seen := 0
+	var pool_txt: Array[String] = []
+	for c in CharDefs.CHARACTERS:
+		var sim := _charmk(str(c["id"]))
+		var mine := str(c["start"])
+		var seen: Dictionary = {}
+		for i in 400:
+			for ch in sim.loadout.roll_choices(3):
+				var cid := str((ch["def"] as Dictionary)["id"])
+				if int((ch["def"] as Dictionary).get("kind", 1)) != UpgradeDefs.KIND_WEAPON:
+					continue
+				seen[cid] = true
+				# 别人的专属武器出现 = 泄漏
+				if UpgradeDefs.is_exclusive(cid) and UpgradeDefs.owner_of(cid) != str(c["id"]):
+					leaked += 1
+		if seen.has(mine):
+			own_seen += 1
+		pool_txt.append("%s%d" % [str(c["name"])[0], seen.size()])
+
+	var ok := bad_data == 0 and leaked == 0 and own_seen == CharDefs.CHARACTERS.size()
+	print("  9 专属武器 · 数据表 %s · 400×5 次抽取他人专属泄漏 %d 次 · 自己的专属可升段 %d/%d · 可选武器数 %s · %s" % [
+		_ok(bad_data == 0), leaked, own_seen, CharDefs.CHARACTERS.size(),
+		"/".join(pool_txt), _ok(ok)])
 
 
 static func _evomk(wid: String, passive: String = "", evolved: bool = true,

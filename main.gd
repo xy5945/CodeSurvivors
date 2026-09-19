@@ -248,6 +248,21 @@ func _ready() -> void:
 			get_tree().quit()
 			return
 
+	# --lvshot[=<武器id>]：升级弹窗截图。卡面排版（含"专属"角标会不会撑破卡片）
+	# 只能靠眼睛看。不传 id 就随机抽，传了就强制第一张卡是该武器。
+	for a in OS.get_cmdline_user_args():
+		if a.begins_with("--lvshot"):
+			var wid := a.split("=")[-1] if "=" in a else ""
+			sim.pending_levelups = 1
+			level_up.open(sim)
+			if wid != "":
+				level_up._cards[0].setup(UpgradeDefs.def_of(wid), 2)
+			await RenderingServer.frame_post_draw
+			await RenderingServer.frame_post_draw
+			_save_shot()
+			get_tree().quit()
+			return
+
 	# --pauseshot：暂停界面截图
 	if OS.get_cmdline_user_args().has("--pauseshot"):
 		pause.open()

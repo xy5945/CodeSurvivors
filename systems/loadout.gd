@@ -52,8 +52,12 @@ var char_cd_mult := 1.0
 var char_pickup_mult := 1.0
 var char_trait := CharDefs.T_LEARN
 
+# 当前角色 id。只用来判断"这把武器是不是别人专属的"（见 roll_choices）。
+var char_id := ""
 
-func setup(start_weapon := "whip") -> void:
+
+func setup(start_weapon := "whip", cid := "") -> void:
+	char_id = cid
 	levels[start_weapon] = 1    # 起始武器由角色决定
 	recompute()
 
@@ -234,7 +238,12 @@ func passive_count() -> int:
 func roll_choices(n: int) -> Array:
 	var pool := []
 	for u in UpgradeDefs.UPGRADES:
-		var lv := level_of(u["id"])
+		var uid := str(u["id"])
+		# 别人专属的武器不进池子。角色差异就靠这条 ——
+		# 五个角色的起始武器互不可见，选谁真的决定了这一局能玩出什么。
+		if not UpgradeDefs.can_use(uid, char_id):
+			continue
+		var lv := level_of(uid)
 		if lv >= int(u["max"]):
 			continue
 		if lv == 0:

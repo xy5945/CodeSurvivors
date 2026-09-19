@@ -208,10 +208,17 @@ func _page_weapons(half: int) -> void:
 		_add_head("12 把武器（开局自带一把，其余靠升级获得）")
 	for u in _weapons_slice(half):
 		var lv: Dictionary = (u["levels"] as Array)[0]
-		_add_item("[%s] %s" % [str(u["icon"]), str(u["name"])], str(lv["desc"]))
+		var wname := str(u["name"])
+		# 专属武器标出归属角色：5 把起始武器各自只属于一个角色，
+		# 其他角色在升级三选一里根本看不到它 —— 选角色就是在选开局打法。
+		var owner := UpgradeDefs.owner_of(str(u["id"]))
+		if owner != "":
+			wname += "（%s 专属）" % CharDefs.def_of(owner).get("name", owner)
+		_add_item("[%s] %s" % [str(u["icon"]), wname], str(lv["desc"]))
 		_add_sub(str(u["sub"]))
 	if half == 1:
 		_add_note("武器满 8 级后，配合对应被动满级即可进化（见进化页）。")
+		_add_note("带「专属」的 5 把武器是各个角色的起始武器，其他角色拿不到 —— 所以开局选谁，直接决定了这一局能凑出什么 build。")
 
 
 func _weapons_slice(half: int) -> Array:

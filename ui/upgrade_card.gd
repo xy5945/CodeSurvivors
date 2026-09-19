@@ -75,6 +75,10 @@ func _build() -> void:
 	# 等级变化（进化卡这里是"★ 进化"，因为它不吃等级）
 	var lv_l := Label.new()
 	lv_l.text = "★ 进化" if is_evo else ("新获得" if target_level == 1 else "Lv %d → %d" % [target_level - 1, target_level])
+	# 角色专属武器标出来：玩家看到这一行才知道"这把只有我这局的角色能拿"，
+	# 也顺便解释了为什么别人的专属武器从来没在三选一里出现过。
+	if not is_evo and UpgradeDefs.is_exclusive(str(def.get("id", ""))):
+		lv_l.text += "　·　专属"
 	UiFont.apply(lv_l, 12, C_LV_EVO if is_evo else C_LV)
 	lv_l.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	vb.add_child(lv_l)

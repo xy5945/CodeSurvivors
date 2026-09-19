@@ -139,7 +139,7 @@ func setup(cid := CharDefs.DEFAULT_ID) -> void:
 	loadout.char_cd_mult = float(char_def["cd_mult"])
 	loadout.char_pickup_mult = float(char_def["pickup_mult"])
 	loadout.char_trait = char_trait
-	loadout.setup(str(char_def["start"]))
+	loadout.setup(str(char_def["start"]), char_id)
 	_refresh_max_hp()
 	player_hp = max_hp
 	exp_next = UpgradeDefs.exp_to_next(1)

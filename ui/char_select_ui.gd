@@ -176,7 +176,11 @@ func _fill_card(p: Panel, d: Dictionary) -> void:
 
 	var start := Label.new()
 	var wd := UpgradeDefs.def_of(str(d["start"]))
-	start.text = "起始  " + (str(wd["name"]) if not wd.is_empty() else "?")
+	var wn := str(wd["name"]) if not wd.is_empty() else "?"
+	# 专属标记：这一行是"选角色 = 选打法"最直接的证据
+	if UpgradeDefs.is_exclusive(str(d["start"])):
+		wn += "（专属）"
+	start.text = "起始  " + wn
 	UiFont.apply(start, 9, C_DIM)
 	start.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	col.add_child(start)
