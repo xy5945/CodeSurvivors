@@ -506,6 +506,172 @@ static func _t_rebuild() -> void:
 ##
 ## 运行：godot --headless --path . -- --evotest
 ##
+## 典型一局实测：20 分钟到底能凑出什么 build。
+## 「上限 6 武器 + 5 被动」是理论值，真正卡人的是升级次数 ——
+## 6 把武器各满 8 级要 42 次、5 个被动各满 5 级要 25 次，合计 67 次升级，
+## 而 20 分钟一局只有 50 次上下。所以实战里几乎不可能全满，
+## 这个数字才回答「一局实际能玩到几种」。
+static func _typical_build(minutes: float) -> void:
+	var sim := Sim.new()
+	sim.setup("intern")
+	sim.god_mode = true
+	var steps := int(minutes * 60.0 / GameConfig.FIXED_DT)
+	for step in steps:
+		var a := float(step) * 0.7
+		sim.step(GameConfig.FIXED_DT, cos(a), sin(a))
+		while sim.pending_levelups > 0:
+			var choices: Array = sim.loadout.roll_choices(3)
+			var pick: Dictionary = _pick(choices, sim, true)
+			var id := str((pick["def"] as Dictionary)["id"])
+			if id == "_heal":
+				sim.apply_heal_pick(30.0)
+			else:
+				sim.apply_upgrade(id)
+
+	var ws: Array[String] = []
+	var ps: Array[String] = []
+	for k in sim.loadout.levels.keys():
+		var d := UpgradeDefs.def_of(str(k))
+		if d.is_empty():
+			continue
+		var txt := "%sLv%d" % [str(d.get("name", k)), int(sim.loadout.levels[k])]
+		if int(d.get("kind", 1)) == UpgradeDefs.KIND_WEAPON:
+			ws.append(txt)
+		else:
+			ps.append(txt)
+	var evo := 0
+	for k in sim.loadout.evolved.keys():
+		if bool(sim.loadout.evolved[k]):
+			evo += 1
+	print("")
+	print("=== 典型一局实测（%.0f 分钟 · 无敌 · 优先拿新项）===" % minutes)
+	print("  Lv %d ｜ 武器 %d 把（上限 %d）｜ 被动 %d 个（上限 %d）｜ 进化 %d 条" % [
+		sim.level, ws.size(), GameConfig.MAX_WEAPONS,
+		ps.size(), GameConfig.MAX_PASSIVES, evo])
+	print("  武器：" + "、".join(ws))
+	print("  被动：" + "、".join(ps))
+
+
+## --dmgtab：一局可用武器/被动数量 + 12 把武器的单体 / AOE 伤害对照
+static func run_dmg_table() -> void:
+	print("")
+	print("=== 一局能拿多少武器 / 被动 ===")
+	print("同时携带上限：武器 %d · 被动 %d（进化是机制质变，不占武器槽）"
+		% [GameConfig.MAX_WEAPONS, GameConfig.MAX_PASSIVES])
+	for c in CharDefs.CHARACTERS:
+		var cid := str(c["id"])
+		var nw := 0
+		var np := 0
+		for u in UpgradeDefs.UPGRADES:
+			if not UpgradeDefs.can_use(str(u["id"]), cid):
+				continue
+			if int(u["kind"]) == UpgradeDefs.KIND_WEAPON:
+				nw += 1
+			else:
+				np += 1
+		var own := str(UpgradeDefs.def_of(str(c["start"])).get("name", "?"))
+		print("  %s  可选武器 %d → 实带 %d ｜ 可选被动 %d → 实带 %d ｜ 专属：%s" % [
+			str(c["name"]), nw, mini(nw, GameConfig.MAX_WEAPONS),
+			np, mini(np, GameConfig.MAX_PASSIVES), own])
+
+	print("")
+	print("=== 12 把武器 · 单体 / AOE 伤害对照（满级 Lv8 · 木桩 30 秒）===")
+	print("  单体：正前方 90px 放 1 只木桩 ｜ 群体：正前方半圆 90px 摆 12 只 ｜ 朝向固定朝右、木桩钉死")
+	print("  伤害放大 = 群体DPS ÷ 单体DPS（清群效率：打一群时总伤害翻几倍）")
+	print("  命中只数 = 12 只木桩里实际挨过打的有几只（AOE 覆盖面）")
+	print("")
+	print("  武器          单体DPS   群体DPS   伤害放大   命中只数   满级属性")
+	for u in UpgradeDefs.UPGRADES:
+		if int(u["kind"]) != UpgradeDefs.KIND_WEAPON:
+			continue
+		var a1: Array = _dps_one(str(u["id"]), 1)
+		var a12: Array = _dps_one(str(u["id"]), 12)
+		var single: float = a1[0]
+		var multi: float = a12[0]
+		var amp := multi / maxf(single, 0.001)
+		print("  %s %8.0f  %8.0f   %6.1f 倍   %2d / 12   %s" % [
+			str(u["name"]).rpad(12), single, multi, amp, int(a12[1]), _attrs(u)])
+
+	print("")
+	print("  注：木桩打不死，所以「击杀才触发」的机制在这张表里测不出来 ——")
+	print("      垃圾回收（残血 ≤35% 直接回收）和全量重编译（每杀一只 CD -0.03s）实战会强不少。")
+
+	print("")
+	print("=== 被动强化（满级属性）===")
+	for u in UpgradeDefs.UPGRADES:
+		if int(u["kind"]) != UpgradeDefs.KIND_PASSIVE:
+			continue
+		print("  %s %s" % [str(u["name"]).rpad(10), _attrs(u)])
+	var hp_d: Dictionary = UpgradeDefs.HEAL_PICK
+	print("  %s %s（兜底，不占等级、不进 levels）" % [
+		str(hp_d.get("name", "紧急补丁")).rpad(10), str((hp_d.get("levels", [{}]) as Array)[0].get("desc", ""))])
+	print("")
+	_typical_build(20.0)
+
+
+## 摆 n 只不动的木桩，跑 SECONDS 秒，返回每秒总伤害。
+## 木桩血量给到 100 万是为了「打不死」—— 一旦被打死，超出的伤害就统计不到，
+## 强度对比会变成「谁先把木桩打死」而不是「谁输出高」。
+static func _dps_one(wid: String, n: int) -> Array:
+	var sim := _w6mk(wid)
+	var SEC := 30.0
+	var HP := 1000000.0
+	if n == 1:
+		# 放在正前方：朝向固定朝右，方向性武器才能全力输出
+		sim.enemies.spawn(sim.player_x + 90.0, sim.player_y, HP, 0.0, 10.0, 0)
+	else:
+		_w6arc(sim, n, 90.0, HP)
+	# 木桩必须钉死在原地。分支长鞭满级带击退 push=14，30 秒能把它推出 400 像素，
+	# 一旦出了 reach=148 就再也打不到 —— 那样测出来的是「击退有多强」，
+	# 而不是「这把武器输出多少」（实测没钉位时单体只有 5 DPS，纯属假象）。
+	var px0 := sim.enemies.px.duplicate()
+	var py0 := sim.enemies.py.duplicate()
+	var hp0 := sim.enemies.hp.duplicate()
+	var before := _w6hp(sim)
+	var steps := int(SEC / GameConfig.FIXED_DT)
+	for i in steps:
+		sim.step(GameConfig.FIXED_DT, 0.0, 0.0)
+		for k in sim.enemies.count:
+			sim.enemies.px[k] = px0[k]
+			sim.enemies.py[k] = py0[k]
+	# 挨过打的木桩数 —— 这才是「AOE 覆盖面」。
+	# 光看总伤害会被误导：多线程齐射是一梭子 7 发各打各的目标，
+	# 打 7 只和打 1 只的**总伤害完全一样**（倍率 1.0），
+	# 可它明明同时覆盖了 7 个目标。总伤害衡量的是「清群效率」，
+	# 命中只数衡量的才是「一次能打到几个」，两个得一起看。
+	var hits := 0
+	for k in sim.enemies.count:
+		if sim.enemies.hp[k] < hp0[k] - 1.0:
+			hits += 1
+	return [(before - _w6hp(sim)) / SEC, hits]
+
+
+## 玩家正前方 span 弧度内均匀摆 n 只木桩（默认半圆 180 度）。
+## 用半圆而不是整圈：实战里敌人是从一侧涌过来的，玩家也是朝着它们打。
+## 摆整圈的话多线程齐射那种平行弹道只能够到正前方一只，测出「1.0 只」——
+## 那反映的是「背后打不到」，不是「这把武器不会打群」，会误导。
+static func _w6arc(sim, n: int, dist: float, hp: float, span: float = PI) -> void:
+	for k in n:
+		var a := -span * 0.5 + span * float(k) / float(n - 1)
+		sim.enemies.spawn(
+			sim.player_x + cos(a) * dist,
+			sim.player_y + sin(a) * dist,
+			hp, 0.0, 10.0, 0
+		)
+
+
+## 满级那一档的数值属性（去掉 desc）
+static func _attrs(u: Dictionary) -> String:
+	var arr: Array = u["levels"] as Array
+	var lv: Dictionary = arr[int(u["max"]) - 1]
+	var parts: Array[String] = []
+	for k in lv.keys():
+		if k == "desc":
+			continue
+		parts.append("%s=%s" % [str(k), str(lv[k])])
+	return " ".join(parts)
+
+
 static func run_evo() -> void:
 	print("")
 	print("=== 进化系统 · 机制测试 ===")

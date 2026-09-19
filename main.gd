@@ -57,6 +57,12 @@ func _ready() -> void:
 		get_tree().quit()
 		return
 
+	if OS.get_cmdline_user_args().has("--dmgtab"):
+		set_process(false)
+		Bench.run_dmg_table()
+		get_tree().quit()
+		return
+
 	if OS.get_cmdline_user_args().has("--wpntest"):
 		set_process(false)
 		WeaponTest.run()
