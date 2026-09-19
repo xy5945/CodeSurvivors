@@ -74,7 +74,7 @@ func _build() -> void:
 	title.text = TITLE_TEXT
 	UiFont.apply(title, 42, C_TITLE)
 	title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	title.position = Vector2(0.0, 118.0)
+	title.position = Vector2(0.0, 74.0)
 	title.size = Vector2(640.0, 54.0)
 	root.add_child(title)
 
@@ -82,7 +82,7 @@ func _build() -> void:
 	sub.text = SUB_TEXT
 	UiFont.apply(sub, 14, C_SUB)
 	sub.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	sub.position = Vector2(0.0, 178.0)
+	sub.position = Vector2(0.0, 130.0)
 	sub.size = Vector2(640.0, 22.0)
 	root.add_child(sub)
 
@@ -90,7 +90,7 @@ func _build() -> void:
 	desc.text = DESC_TEXT
 	UiFont.apply(desc, 12, C_DIM)
 	desc.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	desc.position = Vector2(0.0, 214.0)
+	desc.position = Vector2(0.0, 158.0)
 	desc.size = Vector2(640.0, 20.0)
 	root.add_child(desc)
 
@@ -98,29 +98,30 @@ func _build() -> void:
 	# 而且说明页没有入口 —— 想看武器表只能先开一局。
 	# 「关于本作品」放最后：它是品牌页，不是玩法入口，点了会离开这条主线。
 	var start_btn := UiFont.make_button("开始游戏", 14, Color(1.0, 0.94, 0.72, 1.0))
-	start_btn.position = Vector2(240.0, 238.0)
-	start_btn.size = Vector2(160.0, 32.0)
+	start_btn.position = Vector2(240.0, 202.0)
+	start_btn.size = Vector2(160.0, 34.0)
 	start_btn.pressed.connect(func() -> void: _confirm())
 	root.add_child(start_btn)
 
 	var help_btn := UiFont.make_button("游戏说明", 12)
-	help_btn.position = Vector2(240.0, 276.0)
-	help_btn.size = Vector2(160.0, 26.0)
+	help_btn.position = Vector2(240.0, 250.0)
+	help_btn.size = Vector2(160.0, 28.0)
 	help_btn.pressed.connect(func() -> void: help_requested.emit())
 	root.add_child(help_btn)
 
 	var about_btn := UiFont.make_button("关于本作品", 12)
-	about_btn.position = Vector2(240.0, 306.0)
-	about_btn.size = Vector2(160.0, 26.0)
+	about_btn.position = Vector2(240.0, 288.0)
+	about_btn.size = Vector2(160.0, 28.0)
 	about_btn.pressed.connect(func() -> void: about_requested.emit())
 	root.add_child(about_btn)
 
-	# 落款压在 338：再往下就出视口了（360 高）
+	# 落款是"签名"，不是正文：和按钮区隔 18px、离视口底留 14px，
+	# 贴着按钮会被当成第三个按钮的说明文字。
 	var footer := Label.new()
 	footer.text = FOOTER_TEXT
 	UiFont.apply(footer, 9, C_FOOTER)
 	footer.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	footer.position = Vector2(0.0, 338.0)
+	footer.position = Vector2(0.0, 334.0)
 	footer.size = Vector2(640.0, 14.0)
 	root.add_child(footer)
 
