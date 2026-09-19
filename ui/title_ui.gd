@@ -14,18 +14,21 @@ extends CanvasLayer
 
 signal start_requested
 signal help_requested
+signal about_requested
 
 const C_TITLE := Color(0.62, 0.94, 1.0, 1.0)      # 青白：和场内电路板同色系
 const C_SUB := Color(1.0, 0.86, 0.42, 1.0)        # 金色：升级/进化的"奖励色"
 const C_DIM := Color(0.60, 0.72, 0.86, 1.0)
+const C_FOOTER := Color(0.52, 0.46, 0.34, 1.0)   # 落款：压暗的金，不抢标题
 
 const TITLE_TEXT := "代码幸存者"
 const SUB_TEXT := "CODE  SURVIVORS"
 const DESC_TEXT := "你是一段程序 —— 在 Bug 的海洋里活到编译成功"
-const HINT_TEXT := "按 Enter 也可以直接开始"
+# 落款：和塔防《守护稚码王国》主菜单同一条，品牌只在这一行露面，
+# 不抢标题的注意力（字号最小、放在最底）
+const FOOTER_TEXT := "稚码园机器人编程　原创作品　v1.0.0"
 
 var _bg: Node2D
-var _hint: Label
 var _is_open := false
 var _t := 0.0
 
@@ -91,35 +94,42 @@ func _build() -> void:
 	desc.size = Vector2(640.0, 20.0)
 	root.add_child(desc)
 
-	# 两个明确按钮取代原来的「点屏幕任意处开始」：后者玩家不知道点哪，
+	# 三个明确按钮取代原来的「点屏幕任意处开始」：后者玩家不知道点哪，
 	# 而且说明页没有入口 —— 想看武器表只能先开一局。
+	# 「关于本作品」放最后：它是品牌页，不是玩法入口，点了会离开这条主线。
 	var start_btn := UiFont.make_button("开始游戏", 14, Color(1.0, 0.94, 0.72, 1.0))
-	start_btn.position = Vector2(240.0, 246.0)
+	start_btn.position = Vector2(240.0, 238.0)
 	start_btn.size = Vector2(160.0, 32.0)
 	start_btn.pressed.connect(func() -> void: _confirm())
 	root.add_child(start_btn)
 
 	var help_btn := UiFont.make_button("游戏说明", 12)
-	help_btn.position = Vector2(240.0, 286.0)
-	help_btn.size = Vector2(160.0, 28.0)
+	help_btn.position = Vector2(240.0, 276.0)
+	help_btn.size = Vector2(160.0, 26.0)
 	help_btn.pressed.connect(func() -> void: help_requested.emit())
 	root.add_child(help_btn)
 
-	_hint = Label.new()
-	_hint.text = HINT_TEXT
-	UiFont.apply(_hint, 10, C_DIM)
-	_hint.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	_hint.position = Vector2(0.0, 324.0)
-	_hint.size = Vector2(640.0, 18.0)
-	root.add_child(_hint)
+	var about_btn := UiFont.make_button("关于本作品", 12)
+	about_btn.position = Vector2(240.0, 306.0)
+	about_btn.size = Vector2(160.0, 26.0)
+	about_btn.pressed.connect(func() -> void: about_requested.emit())
+	root.add_child(about_btn)
+
+	# 落款压在 338：再往下就出视口了（360 高）
+	var footer := Label.new()
+	footer.text = FOOTER_TEXT
+	UiFont.apply(footer, 9, C_FOOTER)
+	footer.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	footer.position = Vector2(0.0, 338.0)
+	footer.size = Vector2(640.0, 14.0)
+	root.add_child(footer)
 
 
 func _process(dt: float) -> void:
 	if not _is_open:
 		return
+	# 背景的 0/1 自己在飘（见 _TitleBg），标题页本身不再做别的动画
 	_t += dt
-	# 提示呼吸：全屏静止不动会让人以为卡住了
-	_hint.modulate.a = 0.55 + 0.45 * (0.5 + 0.5 * sin(_t * 3.0))
 
 
 func _confirm() -> void:

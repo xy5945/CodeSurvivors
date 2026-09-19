@@ -24,6 +24,7 @@ extends Node2D
 @onready var title: TitleUI = $TitleUI
 @onready var pause: PauseUI = $PauseUI
 @onready var help: HelpUI = $HelpUI
+@onready var about: AboutUI = $AboutUI
 @onready var vignette: DamageVignette = $DamageVignette
 
 var sim: Sim
@@ -180,10 +181,13 @@ func _ready() -> void:
 	char_select.back_requested.connect(_on_char_back)
 	title.start_requested.connect(_on_title_start)
 	title.help_requested.connect(_on_title_help)
+	title.about_requested.connect(_on_title_about)
 	pause.resume_requested.connect(_on_pause_resume)
 	pause.help_requested.connect(_on_pause_help)
 	pause.quit_requested.connect(_on_pause_quit)
 	help.back_requested.connect(_on_help_back)
+	# about 的返回语义和 help 完全一样：从哪来回哪去
+	about.back_requested.connect(_on_help_back)
 
 	camera.position = Vector2(sim.player_x, sim.player_y)
 	_sync_player(0.0, false)
@@ -298,6 +302,16 @@ func _ready() -> void:
 	if OS.get_cmdline_user_args().has("--titleshot"):
 		_set_gameplay_ui(false)
 		title.open()
+		await RenderingServer.frame_post_draw
+		await RenderingServer.frame_post_draw
+		_save_shot()
+		get_tree().quit()
+		return
+
+	# --aboutshot：品牌页（关于本作品）截图。落款、版权声明的排版只能靠眼睛看
+	if OS.get_cmdline_user_args().has("--aboutshot"):
+		_set_gameplay_ui(false)
+		about.open("title")
 		await RenderingServer.frame_post_draw
 		await RenderingServer.frame_post_draw
 		_save_shot()
@@ -675,6 +689,34 @@ func _uitest() -> void:
 		f.resource_path if f != null else "未加载", "OK" if f != null else "FAIL"])
 	print("")
 
+	# ---- 品牌页（关于本作品）----
+	# 排版只能靠眼睛看，但"该写的有没有写"必须能测：
+	# 品牌、著作权、创作理念三块，漏任何一块这页就白做了。
+	print("")
+	print("=== 关于本作品 · 无头测试 ===")
+	about.open("title")
+	var atxt := about.debug_text()
+	var need: Array[String] = [
+		"稚码园机器人编程", "保留所有权利", "关于本作品",
+		"创作理念", "版权声明", "作品信息",
+	]
+	var miss: Array[String] = []
+	for w in need:
+		if not atxt.contains(w):
+			miss.append(w)
+	# 内容量必须和数据表一致：写死的数字迟早和游戏对不上
+	var cnt_ok: bool = atxt.contains("%d 名" % CharDefs.CHARACTERS.size()) \
+		and atxt.contains("%d 类 Bug" % EnemyDB.DEFS.size())
+	print("  打开=%s · 暂停=%s" % [about.is_open(), get_tree().paused])
+	print("  必备文案 %s%s" % ["OK" if miss.is_empty() else "FAIL",
+		"" if miss.is_empty() else "（缺：" + "、".join(miss) + "）"])
+	print("  内容量取自数据表 · 角色 %d / Bug %d · %s" % [
+		CharDefs.CHARACTERS.size(), EnemyDB.DEFS.size(), "OK" if cnt_ok else "FAIL"])
+	about.close()
+	print("  返回后 · 打开=%s · %s" % [about.is_open(),
+		"OK" if not about.is_open() else "FAIL"])
+	print("")
+
 
 ##
 ## 知识卡无头测试。运行：godot --headless --path . -- --cardtest
@@ -789,7 +831,7 @@ func _input(event: InputEvent) -> void:
 	var ke := event as InputEventKey
 	if ke.keycode != KEY_ESCAPE or not ke.pressed or ke.echo:
 		return
-	if help.is_open():
+	if help.is_open() or about.is_open():
 		return
 	_toggle_pause()
 	get_viewport().set_input_as_handled()
@@ -797,7 +839,8 @@ func _input(event: InputEvent) -> void:
 
 func _toggle_pause() -> void:
 	# 这些界面各有各的 ESC 语义（或根本不该被暂停打断），让它们自己处理
-	if title.is_open() or char_select.is_open() or level_up.visible or result.is_open():
+	if title.is_open() or char_select.is_open() or level_up.visible or result.is_open() \
+			or about.is_open():
 		return
 	if pause.is_open():
 		pause.close()
@@ -828,6 +871,12 @@ func _on_pause_quit() -> void:
 
 func _on_pause_help() -> void:
 	help.open("pause")
+
+
+## 品牌页：从标题页进来，返回时把标题页重新激活（同 help）
+func _on_title_about() -> void:
+	title.set_active(false)
+	about.open("title")
 
 
 func _on_title_help() -> void:
