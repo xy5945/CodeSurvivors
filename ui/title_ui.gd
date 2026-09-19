@@ -15,6 +15,7 @@ extends CanvasLayer
 signal start_requested
 signal help_requested
 signal about_requested
+signal license_requested
 
 const C_TITLE := Color(0.62, 0.94, 1.0, 1.0)      # 青白：和场内电路板同色系
 const C_SUB := Color(1.0, 0.86, 0.42, 1.0)        # 金色：升级/进化的"奖励色"
@@ -29,6 +30,9 @@ const DESC_TEXT := "你是一段程序 —— 在 Bug 的海洋里活到编译�
 const FOOTER_TEXT := "稚码园机器人编程　原创作品　v1.0.0"
 
 var _bg: Node2D
+var _status: Label
+var _start_btn: Button
+var _lic_btn: Button
 var _is_open := false
 var _t := 0.0
 
@@ -54,7 +58,7 @@ func open() -> void:
 	_is_open = true
 	Input.set_mouse_mode(Input.MOUSE_MODE_VISIBLE)
 	get_tree().paused = true
-
+	refresh_status()
 
 func _build() -> void:
 	var root := Control.new()
@@ -72,59 +76,109 @@ func _build() -> void:
 
 	var title := Label.new()
 	title.text = TITLE_TEXT
-	UiFont.apply(title, 42, C_TITLE)
+	UiFont.apply(title, 40, C_TITLE)
 	title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	title.position = Vector2(0.0, 74.0)
-	title.size = Vector2(640.0, 54.0)
+	title.position = Vector2(0.0, 46.0)
+	title.size = Vector2(640.0, 56.0)
 	root.add_child(title)
 
 	var sub := Label.new()
 	sub.text = SUB_TEXT
-	UiFont.apply(sub, 14, C_SUB)
+	UiFont.apply(sub, 13, C_SUB)
 	sub.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	sub.position = Vector2(0.0, 130.0)
-	sub.size = Vector2(640.0, 22.0)
+	sub.position = Vector2(0.0, 102.0)
+	sub.size = Vector2(640.0, 20.0)
 	root.add_child(sub)
 
 	var desc := Label.new()
 	desc.text = DESC_TEXT
 	UiFont.apply(desc, 12, C_DIM)
 	desc.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	desc.position = Vector2(0.0, 158.0)
-	desc.size = Vector2(640.0, 20.0)
+	desc.position = Vector2(0.0, 128.0)
+	desc.size = Vector2(640.0, 18.0)
 	root.add_child(desc)
+
+	# 授权状态单独占一行：常驻但不抢眼。它既是「还剩几天」的提醒，
+	# 也是到期后的提示 —— 玩家不该某天突然被锁，事先看得见才不觉得被骗。
+	_status = Label.new()
+	UiFont.apply(_status, 10, C_DIM)
+	_status.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	_status.position = Vector2(0.0, 154.0)
+	_status.size = Vector2(640.0, 16.0)
+	root.add_child(_status)
 
 	# 三个明确按钮取代原来的「点屏幕任意处开始」：后者玩家不知道点哪，
 	# 而且说明页没有入口 —— 想看武器表只能先开一局。
-	# 「关于本作品」放最后：它是品牌页，不是玩法入口，点了会离开这条主线。
-	var start_btn := UiFont.make_button("开始游戏", 14, Color(1.0, 0.94, 0.72, 1.0))
-	start_btn.position = Vector2(240.0, 202.0)
-	start_btn.size = Vector2(160.0, 34.0)
-	start_btn.pressed.connect(func() -> void: _confirm())
-	root.add_child(start_btn)
+	# 「关于本作品」放后面：它是品牌页，不是玩法入口，点了会离开这条主线。
+	_start_btn = UiFont.make_button("开始游戏", 14, Color(1.0, 0.94, 0.72, 1.0))
+	_start_btn.position = Vector2(240.0, 180.0)
+	_start_btn.size = Vector2(160.0, 30.0)
+	_start_btn.pressed.connect(func() -> void: _confirm())
+	_style_disabled(_start_btn)
+	root.add_child(_start_btn)
 
 	var help_btn := UiFont.make_button("游戏说明", 12)
-	help_btn.position = Vector2(240.0, 250.0)
-	help_btn.size = Vector2(160.0, 28.0)
+	help_btn.position = Vector2(240.0, 218.0)
+	help_btn.size = Vector2(160.0, 24.0)
 	help_btn.pressed.connect(func() -> void: help_requested.emit())
 	root.add_child(help_btn)
 
 	var about_btn := UiFont.make_button("关于本作品", 12)
-	about_btn.position = Vector2(240.0, 288.0)
-	about_btn.size = Vector2(160.0, 28.0)
+	about_btn.position = Vector2(240.0, 250.0)
+	about_btn.size = Vector2(160.0, 24.0)
 	about_btn.pressed.connect(func() -> void: about_requested.emit())
 	root.add_child(about_btn)
 
-	# 落款是"签名"，不是正文：和按钮区隔 18px、离视口底留 14px，
-	# 贴着按钮会被当成第三个按钮的说明文字。
+	# 激活入口常驻但做得最小最暗：平时不打扰，到期时学生自己就能找到。
+	# 藏起来的话，每个到期的人都要打电话问一句"怎么续"。
+	_lic_btn = UiFont.make_button("输入激活码", 11, Color(0.72, 0.80, 0.90, 1.0))
+	_lic_btn.position = Vector2(240.0, 282.0)
+	_lic_btn.size = Vector2(160.0, 22.0)
+	_lic_btn.pressed.connect(func() -> void: license_requested.emit())
+	root.add_child(_lic_btn)
+
+	# 落款是"签名"，不是正文：和按钮区隔开、离视口底留一点余量，
+	# 贴着按钮会被当成最后一个按钮的说明文字。
 	var footer := Label.new()
 	footer.text = FOOTER_TEXT
 	UiFont.apply(footer, 9, C_FOOTER)
 	footer.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	footer.position = Vector2(0.0, 334.0)
+	footer.position = Vector2(0.0, 328.0)
 	footer.size = Vector2(640.0, 14.0)
 	root.add_child(footer)
 
+	refresh_status()
+
+
+## 灰掉的按钮要自己补样式：make_button 只定义了正常/hover/pressed/focus，
+## 漏掉 disabled 的话，到期后那个按钮会退回 Godot 默认灰块，和整套 UI 不是一路。
+func _style_disabled(b: Button) -> void:
+	var sb := StyleBoxFlat.new()
+	sb.bg_color = Color(0.08, 0.09, 0.12, 0.92)
+	sb.border_color = Color(0.24, 0.27, 0.33, 1.0)
+	sb.set_border_width_all(1)
+	sb.set_corner_radius_all(3)
+	b.add_theme_stylebox_override("disabled", sb)
+	b.add_theme_color_override("font_disabled_color", Color(0.44, 0.47, 0.54, 1.0))
+
+
+## 刷新授权状态。到期后把「开始游戏」灰掉并换文案 ——
+## 只锁入口、不弹窗赶人：已经开局的那一局必须能打完。
+func refresh_status() -> void:
+	if _status == null or _start_btn == null:
+		return
+	_status.text = SaveData.status_text()
+	var c := C_DIM
+	if SaveData.is_permanent():
+		c = Color(1.0, 0.86, 0.42, 1.0)
+	elif SaveData.is_expired():
+		c = Color(1.0, 0.46, 0.42, 1.0)
+	elif SaveData.days_left() <= 2:
+		c = Color(1.0, 0.72, 0.35, 1.0)
+	_status.add_theme_color_override("font_color", c)
+	# 按钮只负责"灰掉"，「为什么不能进」交给上面那行状态文字说 ——
+	# 两处都写「试用已结束」会变成两个并列的提示，反而看不出哪个是原因。
+	_start_btn.disabled = SaveData.is_expired()
 
 func _process(dt: float) -> void:
 	if not _is_open:
@@ -136,11 +190,14 @@ func _process(dt: float) -> void:
 func _confirm() -> void:
 	if not _is_open:
 		return
+	# 到期后 Enter 不该还能开局：直接引到激活窗，省得玩家按了没反应
+	if SaveData.is_expired():
+		license_requested.emit()
+		return
 	_is_open = false
 	hide()
 	get_tree().paused = false
 	start_requested.emit()
-
 
 func _input(event: InputEvent) -> void:
 	if not _is_open:

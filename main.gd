@@ -22,6 +22,7 @@ extends Node2D
 @onready var result: ResultUI = $ResultUI
 @onready var char_select: CharSelectUI = $CharSelectUI
 @onready var title: TitleUI = $TitleUI
+@onready var license: LicenseUI = $LicenseUI
 @onready var pause: PauseUI = $PauseUI
 @onready var help: HelpUI = $HelpUI
 @onready var about: AboutUI = $AboutUI
@@ -182,6 +183,8 @@ func _ready() -> void:
 	title.start_requested.connect(_on_title_start)
 	title.help_requested.connect(_on_title_help)
 	title.about_requested.connect(_on_title_about)
+	title.license_requested.connect(_on_title_license)
+	license.closed.connect(_on_license_closed)
 	pause.resume_requested.connect(_on_pause_resume)
 	pause.help_requested.connect(_on_pause_help)
 	pause.quit_requested.connect(_on_pause_quit)
@@ -391,6 +394,48 @@ func _ready() -> void:
 		Bench.run_save()
 		get_tree().quit()
 		return
+
+	# --lictest：机器绑定 + 激活码自检（含跨语言一致性，用临时存档与关闭埋点）
+	if OS.get_cmdline_user_args().has("--lictest"):
+		set_process(false)
+		Bench.run_license()
+		get_tree().quit()
+		return
+
+	# --licredeem=<激活码>：走一次真实激活流程（会写存档）。
+	# 用来核对"我发出的码在学生机器上到底能不能用"，或者客服排查时直接看拒绝原因。
+	for a in OS.get_cmdline_user_args():
+		if a.begins_with("--licredeem="):
+			var code := a.substr("--licredeem=".length())
+			var res := License.verify(code)
+			if bool(res["ok"]):
+				License.apply(int(res["days"]))
+				print("[激活] 成功 · 本机申请码 %s · 时长 %s · 剩余 %d 天" % [
+					License.machine_code(),
+					"永久" if bool(res["permanent"]) else "%d 天" % int(res["days"]),
+					SaveData.days_left()])
+			else:
+				print("[激活] 失败 · 本机申请码 %s · 原因：%s" % [
+					License.machine_code(), str(res["reason"])])
+			get_tree().quit()
+			return
+
+	# --licshot[=lock]：激活弹窗截图；带 =lock 则先把授权摆成"已到期"再截标题页，
+	# 用来核对"试用已结束"那行字的颜色、以及开始按钮灰掉的样子。
+	for a in OS.get_cmdline_user_args():
+		if a.begins_with("--licshot"):
+			_set_gameplay_ui(false)
+			title.open()
+			if a.ends_with("=lock"):
+				SaveData.set_license_state(SaveData.today_index() - 30, SaveData.TRIAL_DAYS, false)
+				title.refresh_status()
+			else:
+				license.open()
+			await RenderingServer.frame_post_draw
+			await RenderingServer.frame_post_draw
+			_save_shot()
+			get_tree().quit()
+			return
 
 	# --unlockall / --resetunlock：开发用。想直接看后面的角色时不用重打一遍。
 	if OS.get_cmdline_user_args().has("--unlockall"):
@@ -874,6 +919,17 @@ func _on_pause_help() -> void:
 
 
 ## 品牌页：从标题页进来，返回时把标题页重新激活（同 help）
+func _on_title_license() -> void:
+	title.set_active(false)
+	license.open()
+
+
+func _on_license_closed() -> void:
+	# 激活成功后再刷新一次，标题页上的"试用剩余 X 天"要立刻变成"授权剩余 N 天"
+	title.set_active(true)
+	title.refresh_status()
+
+
 func _on_title_about() -> void:
 	title.set_active(false)
 	about.open("title")

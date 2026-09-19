@@ -928,6 +928,195 @@ static func run_char() -> void:
 
 ## 角色解锁 + 难度自检。运行：godot --headless --path . -- --savetest
 ## 全程写临时存档（SaveData.test_path），不碰玩家的真档，跑完删掉。
+## ---------------------------------------------------------------- 授权测试
+##
+## 这里必须同时验两件事，缺一不可：
+##   ① 游戏端自己造的码能过（内部自洽）
+##   ② **发码工具（Python，另一套独立实现）造的码也能过**
+## 两种语言算同一个 HMAC，只要有一处对不齐（字节序、截断长度、Base32
+## 填充位），第 2 项就会炸。所以下面钉了一个工具真实产出的码。
+const TOOL_CODE := "AEDN-L5TK-6AAB-5J32-JWQQ"   # python keygen.py -g code_survivors -m A3K7-M2XQ -d 30
+const TOOL_MACHINE := "A3K7-M2XQ"
+
+
+static func run_license() -> void:
+	print("")
+	print("=== 授权 · 机器绑定 · 激活码 ===")
+	print("存档与第二埋点都走临时文件，跑完还原")
+	print("")
+	SaveData.test_path = "user://_lic_test.cfg"
+	SaveData.use_aux = true
+	SaveData.aux_path_override = "user://_lic_aux.txt"
+	SaveData.loaded = false
+	License._secret_ready = false
+	License._machine_cache = PackedByteArray()
+
+	_t_lic_machine()
+	_t_lic_tool_code()
+	_t_lic_reject()
+	_t_lic_apply()
+	_t_lic_expire()
+	_t_lic_clock()
+	_t_lic_no_secret()
+	_t_lic_aux()
+
+	DirAccess.remove_absolute(ProjectSettings.globalize_path(SaveData.test_path))
+	DirAccess.remove_absolute(ProjectSettings.globalize_path(SaveData.aux_path_override))
+	SaveData.test_path = ""
+	SaveData.aux_path_override = ""
+	SaveData.loaded = false
+	License._machine_cache = PackedByteArray()
+	print("")
+
+
+## 用游戏端自己的算法造一个码。只用来在测试里扮演发码工具，
+## 验证「换游戏编号 / 换机器码 / 改天数」这些分支会被正确拒绝。
+static func _make_code(gid: int, m5: PackedByteArray, days: int) -> String:
+	var p := PackedByteArray([gid])
+	p.append_array(m5)
+	p.append((days >> 8) & 0xFF)
+	p.append(days & 0xFF)
+	var mac := License._hmac(License.secret(), p).slice(0, 4)
+	return License.group(License._b32_encode(p + mac))
+
+
+## 1 申请码：稳定、8 个字符、能还原回 5 字节
+static func _t_lic_machine() -> void:
+	var a := License.machine_code()
+	var b := License.machine_code()
+	var raw := License.machine_bytes()
+	var n := License.clean(a).length()
+	var ok: bool = (a == b and n == License.MACHINE_CHARS and raw.size() == License.MACHINE_BYTES
+		and License._b32_decode(a).size() == License.MACHINE_BYTES)
+	print("  1 申请码 · 本机 %s · 两次一致=%s · 8 字符=%s · %s" % [
+		a, "是" if a == b else "否", "是" if n == 8 else "否（%d）" % n, _ok(ok)])
+
+
+## 2 跨语言一致性：工具造的真码，游戏端必须认；换台机器必须失效
+static func _t_lic_tool_code() -> void:
+	License._machine_cache = License._b32_decode(TOOL_MACHINE)
+	var r := License.verify(TOOL_CODE)
+	License._machine_cache = License._b32_decode("A3K7-M2XT")
+	var r_other := License.verify(TOOL_CODE)
+	License._machine_cache = License._b32_decode(TOOL_MACHINE)
+	var ok: bool = (bool(r["ok"]) and int(r["days"]) == 30 and not bool(r_other["ok"]))
+	print("  2 工具真码 · 本机=%s（%d 天）· 换台机器=%s · %s" % [
+		"通过" if r["ok"] else "被拒(%s)" % str(r["reason"]), int(r["days"]),
+		"被拒" if not r_other["ok"] else "竟然通过", _ok(ok)])
+
+
+## 3 四类边界：改字符 / 太短 / 别款游戏 / 本机自造
+static func _t_lic_reject() -> void:
+	var flat := License.clean(TOOL_CODE)
+	var i := flat.length() - 3
+	var ch := flat[i]
+	var tampered := flat.substr(0, i) + ("A" if ch != "A" else "B") + flat.substr(i + 1)
+	var r1 := License.verify(tampered)
+	var r2 := License.verify("AE")
+	var r3 := License.verify(_make_code(2, License._b32_decode(TOOL_MACHINE), 30))
+	var r4 := License.verify(_make_code(License.GAME_ID, License._b32_decode(TOOL_MACHINE), 30))
+	var ok: bool = (not r1["ok"] and not r2["ok"] and not r3["ok"] and bool(r4["ok"]))
+	print("  3 边界 · 改一位=%s · 太短=%s · 别款游戏=%s · 本机自造=%s · %s" % [
+		"拒" if not r1["ok"] else "过", "拒" if not r2["ok"] else "过",
+		"拒" if not r3["ok"] else "过", "过" if r4["ok"] else "拒", _ok(ok)])
+
+
+## 4 激活与幂等：首装给 7 天试用；激活后 30 天；同一个码连输两次天数不变
+static func _t_lic_apply() -> void:
+	DirAccess.remove_absolute(ProjectSettings.globalize_path(SaveData.test_path))
+	SaveData.loaded = false
+	SaveData.load_game()
+	var t_left := SaveData.days_left()
+	var t_lock := SaveData.is_expired()
+	License.apply(30)
+	var a_left := SaveData.days_left()
+	var a_lic := SaveData.licensed
+	License.apply(30)
+	var b_left := SaveData.days_left()
+	# 重开一次（从盘上重读），授权必须还在
+	SaveData.loaded = false
+	SaveData.load_game()
+	var after_reload := SaveData.days_left()
+	var ok: bool = (t_left == 7 and not t_lock and a_left == 30 and b_left == 30
+		and a_lic and after_reload == 30)
+	print("  4 激活与幂等 · 首装试用 %d 天 · 激活后 %d 天 · 连输两次仍 %d 天 · 重开仍 %d 天 · %s" % [
+		t_left, a_left, b_left, after_reload, _ok(ok)])
+
+
+## 5 天数判定：7 天试用到底哪天锁
+static func _t_lic_expire() -> void:
+	var today := SaveData.today_index()
+	SaveData.set_license_state(today, 7, false)
+	var d0: bool = SaveData.days_left() == 7 and not SaveData.is_expired()
+	SaveData.set_license_state(today - 6, 7, false)
+	var d6: bool = SaveData.days_left() == 1 and not SaveData.is_expired()
+	SaveData.set_license_state(today - 7, 7, false)
+	var d7: bool = SaveData.is_expired()
+	SaveData.set_license_state(today - 100, 7, false)
+	var old: bool = SaveData.is_expired()
+	SaveData.set_license_state(today - 500, 0, true)
+	var perm: bool = SaveData.is_permanent() and not SaveData.is_expired()
+	var ok: bool = d0 and d6 and d7 and old and perm
+	print("  5 天数判定 · 第 1 天剩 7 · 第 7 天剩 1 · 第 8 天锁 · 久过期锁 · 永久不锁 · %s" % _ok(ok))
+
+
+## 6 时钟防护：拨回时钟不许续命，回拨要记违规
+static func _t_lic_clock() -> void:
+	var today := SaveData.today_index()
+	SaveData.set_license_state(today - 10, 7, false)
+	SaveData.last_seen_day = 0
+	var used := SaveData.days_used()
+	SaveData.last_seen_day = today + 5      # 系统说今天是 X，上次运行却在 X+5 → 时钟被拨回
+	var used_rollback := SaveData.days_used()
+	SaveData.violations = 0
+	SaveData.last_seen_ts = SaveData.now_ts() + 7200   # 上次运行在 2 小时后
+	SaveData._clock_check()
+	var v := SaveData.violations
+	var ok: bool = (used == 10 and used_rollback == 15 and v == 1)
+	print("  6 时钟防护 · 正常用掉 10 天 · 拨回时钟后仍算 15 天（不缩水）· 记违规 %d 次 · %s" % [v, _ok(ok)])
+
+
+## 8 第二埋点：删掉存档不该重置试用
+static func _t_lic_aux() -> void:
+	var save_abs := ProjectSettings.globalize_path(SaveData.test_path)
+	var aux_abs := ProjectSettings.globalize_path(SaveData.aux_path_override)
+	var today := SaveData.today_index()
+
+	# 场景一：存档被删，辅助文件里记着更早的起算日 → 必须以更早的为准
+	DirAccess.remove_absolute(save_abs)
+	var f := FileAccess.open(SaveData.aux_path_override, FileAccess.WRITE)
+	f.store_line(str(today - 5))
+	f.close()
+	SaveData.loaded = false
+	SaveData.load_game()
+	var recovered := SaveData.start_day
+	var used := SaveData.days_used()
+
+	# 场景二：两份都删掉 → 才真的从头开始（这是方案的已知边界）
+	DirAccess.remove_absolute(save_abs)
+	DirAccess.remove_absolute(aux_abs)
+	SaveData.loaded = false
+	SaveData.load_game()
+	var fresh := SaveData.start_day
+
+	var ok: bool = (recovered == today - 5 and used == 5 and fresh == today)
+	print("  8 第二埋点 · 删存档后起算日捞回 %d（已用 %d 天）· 两份都删才回到今天 · %s" % [
+		recovered, used, _ok(ok)])
+
+
+## 7 密钥缺失（公开仓库 clone 下来的样子）：优雅降级，不能崩也不能误判
+static func _t_lic_no_secret() -> void:
+	var backup := License._secret_cache
+	var ready := License._secret_ready
+	License._secret_cache = PackedByteArray()
+	License._secret_ready = true
+	var r := License.verify(TOOL_CODE)
+	var ok: bool = not bool(r["ok"]) and str(r["reason"]).contains("密钥")
+	print("  7 密钥缺失 · 提示「%s」· %s" % [str(r["reason"]), _ok(ok)])
+	License._secret_cache = backup
+	License._secret_ready = ready
+
+
 static func run_save() -> void:
 	print("")
 	print("=== 角色解锁 · 难度 · 存档 ===")

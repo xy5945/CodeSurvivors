@@ -1,4 +1,4 @@
-[gd_scene load_steps=23 format=3]
+[gd_scene load_steps=24 format=3]
 
 [ext_resource type="Script" path="res://main.gd" id="1_main"]
 [ext_resource type="Script" path="res://render/enemy_renderer.gd" id="2_er"]
@@ -22,6 +22,7 @@
 [ext_resource type="Script" path="res://ui/pause_ui.gd" id="20_pause"]
 [ext_resource type="Script" path="res://ui/help_ui.gd" id="21_help"]
 [ext_resource type="Script" path="res://ui/about_ui.gd" id="22_about"]
+[ext_resource type="Script" path="res://ui/license_ui.gd" id="23_lic"]
 
 [node name="Main" type="Node2D"]
 script = ExtResource("1_main")
@@ -100,3 +101,7 @@ layer = 50
 [node name="AboutUI" type="CanvasLayer" parent="."]
 script = ExtResource("22_about")
 layer = 55
+
+[node name="LicenseUI" type="CanvasLayer" parent="."]
+script = ExtResource("23_lic")
+layer = 60

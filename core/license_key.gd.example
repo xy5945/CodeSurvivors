@@ -1,0 +1,12 @@
+extends RefCounted
+##
+## 激活码密钥（模板）—— 这是给「别人 clone 这个仓库」用的占位文件。
+##
+## 用法：把本文件复制成同目录下的 license_key.gd，再用发码工具导出真密钥
+## 替换下面那一行：
+##     python keygen.py --export code_survivors
+##
+## 真密钥文件被 .gitignore 排除，所以公开仓库里只会看到这个模板。
+## 密钥缺失时游戏照常能玩，只是「输入激活码」会提示未配置。
+##
+const SECRET_HEX := "在此粘贴发码工具导出的 64 位十六进制密钥"
