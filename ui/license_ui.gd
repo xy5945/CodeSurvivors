@@ -187,7 +187,9 @@ func _submit() -> void:
 		_set_msg(str(r["reason"]), C_ERR)
 		return
 	var days := int(r["days"])
-	License.apply(days)
+	if not License.apply(days, raw):
+		_set_msg("这张激活码已经在本机用过了，请找老师要一张新的", C_ERR)
+		return
 	if bool(r["permanent"]):
 		_set_msg("激活成功：已永久授权", C_OK)
 	else:

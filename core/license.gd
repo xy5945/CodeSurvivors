@@ -15,8 +15,9 @@ extends RefCounted
 ##     days      2 字节   授权天数，大端序；0 表示永久
 ##     mac       4 字节   HMAC-SHA256(secret, 前 8 字节) 的前 4 字节
 ##
-## 三道关卡，按代价从低到高排：先验校验码（挡住自己编的码），
-## 再看游戏编号（挡住买别的游戏的人），最后比对机器码（挡住转发给别人）。
+## 四道关卡，按代价从低到高排：先验校验码（挡住自己编的码），
+## 再看游戏编号（挡住买别的游戏的人），然后比对机器码（挡住转发给别人），
+## 最后查「这张码本机用没用过」（挡住拿自己那一张码无限续期）。
 ## 顺序不能反 —— 校验码不过就没必要算机器码，那一步要读注册表，慢。
 ##
 
@@ -30,6 +31,7 @@ const MACHINE_BYTES := 5
 const CODE_CHARS := 20
 const MACHINE_CHARS := 8
 const SECRET_BYTES := 32
+const FINGERPRINT_BYTES := 4
 
 ## Base32 字母表。故意不含 0、1、8、9 —— 手抄时最容易被认错的那四个。
 const B32 := "ABCDEFGHIJKLMNOPQRSTUVWXYZ234567"
@@ -167,6 +169,23 @@ static func machine_code() -> String:
 	return group(_b32_encode(machine_bytes()))
 
 
+# ---------------------------------------------------------------- 指纹
+
+## 激活码指纹：存「这张码在本机用过了」，只留 4 字节。
+## 哈希的是**归一化之后**的码 —— 带不带连字符、全小写、把 O 抄成 0
+## 都算同一张，否则学生换个写法就能再用一次。
+static func code_fingerprint(code: String) -> String:
+	var ctx := HashingContext.new()
+	ctx.start(HashingContext.HASH_SHA256)
+	ctx.update(clean(code).to_utf8_buffer())
+	var d := ctx.finish()
+	var out := ""
+	for i in FINGERPRINT_BYTES:
+		out += HEX_CHARS[(int(d[i]) >> 4) & 0xF]
+		out += HEX_CHARS[int(d[i]) & 0xF]
+	return out
+
+
 # ---------------------------------------------------------------- 验码
 
 static func _hmac(key: PackedByteArray, data: PackedByteArray) -> PackedByteArray:
@@ -214,17 +233,21 @@ static func verify(code: String) -> Dictionary:
 		res["reason"] = "这个激活码是发给另一台电脑的，本机用不了"
 		return res
 
+	if SaveData.has_used_code(code_fingerprint(code)):
+		res["reason"] = "这张激活码已经在本机用过了，请找老师要一张新的"
+		return res
+
 	res["ok"] = true
 	res["days"] = days
 	res["permanent"] = days == 0
 	return res
 
 
-## 把授权写进存档。days = 0 表示永久。
-## 起算日重置为今天 —— 也就是说「再续一次」不会累加，重复输入同一个码
-## 结果不变（天然幂等），不用另外记录「这个码用过了没」。
-static func apply(days: int) -> void:
-	SaveData.activate(days)
+## 把授权写进存档。days = 0 表示永久。返回 false = 这张码本机用过了，没生效。
+## 起算日重置为今天（对天数幂等，不会累加），同时把这张码的指纹记下来 ——
+## 记指纹是为了堵住「同一张码反复输入 = 每次重新装满天数」这个口子。
+static func apply(days: int, code: String) -> bool:
+	return SaveData.activate(days, code_fingerprint(code))
 
 
 ## 给自己看的诊断信息（--lictest 用）。

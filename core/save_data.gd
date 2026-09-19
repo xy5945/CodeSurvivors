@@ -32,11 +32,18 @@ const K_LICENSED := "licensed"          # 是否输入过激活码（只影响�
 const K_VIOLATIONS := "violations"      # 时钟回拨违规次数
 const K_LAST_DAY := "last_seen_day"     # 最后一次运行的本地日序号
 const K_LAST_TS := "last_seen_ts"       # 最后一次运行的 unix 秒
+const K_USED_CODES := "used_codes"      # 本机用过的激活码指纹（同一张码不许用第二次）
 
 const TRIAL_DAYS := 7                   # 未激活时的试用天数
 const MAX_VIOLATIONS := 3               # 回拨几次算恶意
 const CLOCK_TOLERANCE := 3600           # 回拨容差（秒）：NTP 校时可能往回走几分钟
 const MAX_SANE_DAYS := 3650             # 跨度超过十年 → 判定为时钟坏了，不拿它锁人
+
+## 埋点文件所在的目录名。**它是机器全局的，跟游戏项目无关** ——
+## 所以每款游戏必须用自己的名字，否则两款游戏的「起算日」会互相污染：
+## 玩过 A 之后再装 B，B 的试用会直接继承 A 的起算日，一开局就过期。
+## 移植到《守护稚码王国》时，这里要改成 "TowerDefense" 之类。
+const AUX_DIR := "CodeSurvivors"
 
 static var unlocked := 1                 # 已解锁的角色数（前 n 个可用）
 static var cleared: Array[String] = []   # 通关过的角色 id
@@ -48,6 +55,10 @@ static var licensed := false
 static var violations := 0
 static var last_seen_day := 0
 static var last_seen_ts := 0
+
+## 本机用过的激活码指纹。用途只有一个：**拒绝同一张码重复激活**。
+## 不记它的话，「起算日重置为今天」会让学生拿自己那一张码无限续期。
+static var used_codes: Array[String] = []
 
 ## 测试用：写到别的文件去，别把玩家的真存档冲掉（--savetest 会设它）。
 static var test_path := ""
@@ -72,6 +83,7 @@ static func load_game() -> void:
 	violations = 0
 	last_seen_day = 0
 	last_seen_ts = 0
+	used_codes = []
 	var cf := ConfigFile.new()
 	if cf.load(path()) == OK:
 		unlocked = clampi(int(cf.get_value(SEC, K_UNLOCKED, 1)), 1, CharDefs.CHARACTERS.size())
@@ -84,6 +96,8 @@ static func load_game() -> void:
 		violations = int(cf.get_value(SEC_LIC, K_VIOLATIONS, 0))
 		last_seen_day = int(cf.get_value(SEC_LIC, K_LAST_DAY, 0))
 		last_seen_ts = int(cf.get_value(SEC_LIC, K_LAST_TS, 0))
+		for c in (cf.get_value(SEC_LIC, K_USED_CODES, []) as Array):
+			used_codes.append(str(c))
 	loaded = true
 	_bootstrap_license()
 
@@ -98,6 +112,7 @@ static func save_game() -> void:
 	cf.set_value(SEC_LIC, K_VIOLATIONS, violations)
 	cf.set_value(SEC_LIC, K_LAST_DAY, last_seen_day)
 	cf.set_value(SEC_LIC, K_LAST_TS, last_seen_ts)
+	cf.set_value(SEC_LIC, K_USED_CODES, used_codes)
 	var err := cf.save(path())
 	if err != OK:
 		push_warning("[SaveData] 存档写入失败 %d" % err)
@@ -232,7 +247,17 @@ static func status_text() -> String:
 
 ## 激活 / 续期：起算日重置为今天，有效期换成 days（0 = 永久）。
 ## 故意不做加法 —— 同一个码输两次，结果和输一次一样。
-static func activate(days: int) -> void:
+##
+## code_id 是激活码指纹（License 算好传进来）。**同一个指纹第二次来直接拒绝**：
+## 「起算日重置」对天数本身是幂等的，但它同时也意味着"输一次就把天数重新装满"，
+## 所以不记指纹的话，学生拿自己那一张码就能一直续下去。
+## 想续期就得再找我要一张新码 —— 这正是这套授权想要的节奏。
+## code_id 传空串 = 不记指纹（测试里直接摆状态时用）。
+static func activate(days: int, code_id: String = "") -> bool:
+	if code_id != "" and used_codes.has(code_id):
+		return false
+	if code_id != "":
+		used_codes.append(code_id)
 	start_day = today_index()
 	lic_days = days
 	licensed = true
@@ -241,13 +266,27 @@ static func activate(days: int) -> void:
 	last_seen_ts = now_ts()
 	save_game()
 	_write_aux()
+	return true
+
+
+## 这张激活码在本机用过了吗（给 License.verify 当第 4 道关卡）。
+static func has_used_code(code_id: String) -> bool:
+	if code_id == "":
+		return false
+	_ensure()
+	return used_codes.has(code_id)
 
 
 ## 首次运行的初始化 + 每次启动的体检。
 static func _bootstrap_license() -> void:
-	var reg := _read_aux()
+	var aux := _read_aux()
+	var reg := int(aux["start_day"])
 	if reg > 0 and (start_day == 0 or reg < start_day):
 		start_day = reg          # 存档被删过？以更早的那份为准 —— 删档不能重置试用
+	for c in (aux["codes"] as Array):
+		var s := str(c)
+		if s != "" and not used_codes.has(s):
+			used_codes.append(s)  # 用过的码同样要捞回来 —— 删档也不能让旧码复活
 	var today := today_index()
 	if start_day == 0:
 		start_day = today        # 第一次运行，试用从今天开始
@@ -286,9 +325,11 @@ static func _aux_path() -> String:
 		base = OS.get_environment("USERPROFILE")
 	if base.is_empty():
 		return ""
-	return base.path_join("CodeSurvivors").path_join(".state")
+	return base.path_join(AUX_DIR).path_join(".state")
 
 
+## 埋点文件两行：第 1 行起算日，第 2 行用过的激活码指纹（逗号分隔）。
+## 第 2 行是后加的 —— 老文件只有第 1 行，读的时候必须容忍，不能当成坏文件丢掉。
 static func _write_aux() -> void:
 	if not use_aux:
 		return
@@ -300,21 +341,34 @@ static func _write_aux() -> void:
 	if f == null:
 		return
 	f.store_line(str(start_day))
+	f.store_line(",".join(used_codes))
 	f.close()
 
 
-static func _read_aux() -> int:
+## 返回 {"start_day": int, "codes": Array}。读不到就给默认值 ——
+## 埋点只是多一道坎，任何一步失败都不该影响游戏运行。
+static func _read_aux() -> Dictionary:
+	var start := 0
+	var codes: Array[String] = []
 	if not use_aux:
-		return 0
+		return {"start_day": start, "codes": codes}
 	var p := _aux_path()
 	if p.is_empty() or not FileAccess.file_exists(p):
-		return 0
+		return {"start_day": start, "codes": codes}
 	var f := FileAccess.open(p, FileAccess.READ)
 	if f == null:
-		return 0
-	var v := int(f.get_line().strip_edges())
+		return {"start_day": start, "codes": codes}
+	if not f.eof_reached():
+		start = int(f.get_line().strip_edges())
+	if not f.eof_reached():
+		var line := f.get_line().strip_edges()
+		if line != "":
+			for c in line.split(","):
+				var s := c.strip_edges()
+				if s != "":
+					codes.append(s)
 	f.close()
-	return v
+	return {"start_day": start, "codes": codes}
 
 
 ## 测试用：把授权状态直接摆成想要的形状（不落盘）。

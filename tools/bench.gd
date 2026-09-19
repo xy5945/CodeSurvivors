@@ -937,6 +937,9 @@ static func run_char() -> void:
 ## 填充位），第 2 项就会炸。所以下面钉了一个工具真实产出的码。
 const TOOL_CODE := "AEDN-L5TK-6AAB-5J32-JWQQ"   # python keygen.py -g code_survivors -m A3K7-M2XQ -d 30
 const TOOL_MACHINE := "A3K7-M2XQ"
+## 第二张真码（同机器 90 天）：用来验证「换一张新码可以正常续期」。
+## python keygen.py -g code_survivors -m A3K7-M2XQ -d 90
+const TOOL_CODE2 := "AEDN-L5TK-6AAF-VPPK-7BIQ"
 
 
 static func run_license() -> void:
@@ -959,6 +962,7 @@ static func run_license() -> void:
 	_t_lic_clock()
 	_t_lic_no_secret()
 	_t_lic_aux()
+	_t_lic_reuse()
 
 	DirAccess.remove_absolute(ProjectSettings.globalize_path(SaveData.test_path))
 	DirAccess.remove_absolute(ProjectSettings.globalize_path(SaveData.aux_path_override))
@@ -1021,26 +1025,36 @@ static func _t_lic_reject() -> void:
 		"拒" if not r3["ok"] else "过", "过" if r4["ok"] else "拒", _ok(ok)])
 
 
-## 4 激活与幂等：首装给 7 天试用；激活后 30 天；同一个码连输两次天数不变
-static func _t_lic_apply() -> void:
+## 清掉临时存档与临时埋点 —— 每个授权子测试都先站到干净地面上。
+static func _lic_wipe() -> void:
 	DirAccess.remove_absolute(ProjectSettings.globalize_path(SaveData.test_path))
+	DirAccess.remove_absolute(ProjectSettings.globalize_path(SaveData.aux_path_override))
+
+
+## 4 激活 / 续期 / 一码一用：首装 7 天试用；激活 30 天；同码第二次被拒；换新码续期
+static func _t_lic_apply() -> void:
+	_lic_wipe()
 	SaveData.loaded = false
 	SaveData.load_game()
 	var t_left := SaveData.days_left()
 	var t_lock := SaveData.is_expired()
-	License.apply(30)
+	var a_ok := License.apply(30, TOOL_CODE)
 	var a_left := SaveData.days_left()
 	var a_lic := SaveData.licensed
-	License.apply(30)
+	var again := License.verify(TOOL_CODE)               # 同一张码再输一次
+	var again_left := SaveData.days_left()
+	var b_ok := License.apply(90, TOOL_CODE2)            # 换一张新码续期
 	var b_left := SaveData.days_left()
-	# 重开一次（从盘上重读），授权必须还在
+	# 重开一次（从盘上重读），授权与新状态都必须还在
 	SaveData.loaded = false
 	SaveData.load_game()
 	var after_reload := SaveData.days_left()
-	var ok: bool = (t_left == 7 and not t_lock and a_left == 30 and b_left == 30
-		and a_lic and after_reload == 30)
-	print("  4 激活与幂等 · 首装试用 %d 天 · 激活后 %d 天 · 连输两次仍 %d 天 · 重开仍 %d 天 · %s" % [
-		t_left, a_left, b_left, after_reload, _ok(ok)])
+	var ok: bool = (t_left == 7 and not t_lock and a_ok and a_left == 30 and a_lic
+		and not bool(again["ok"]) and again_left == 30 and b_ok and b_left == 90
+		and after_reload == 90)
+	print("  4 激活 · 首装试用 %d 天 · 首激活 %d 天 · 同码再输=%s（仍 %d 天）· 换新码 %d 天 · 重开 %d 天 · %s" % [
+		t_left, a_left, "拒" if not bool(again["ok"]) else "竟然通过", again_left,
+		b_left, after_reload, _ok(ok)])
 
 
 ## 5 天数判定：7 天试用到底哪天锁
@@ -1102,6 +1116,23 @@ static func _t_lic_aux() -> void:
 	var ok: bool = (recovered == today - 5 and used == 5 and fresh == today)
 	print("  8 第二埋点 · 删存档后起算日捞回 %d（已用 %d 天）· 两份都删才回到今天 · %s" % [
 		recovered, used, _ok(ok)])
+
+
+## 9 删档也救不了旧码：存档删掉后授权丢了，但旧码依然被拒（指纹埋在埋点文件里）
+static func _t_lic_reuse() -> void:
+	_lic_wipe()
+	SaveData.loaded = false
+	SaveData.load_game()
+	License.apply(30, TOOL_CODE)
+	DirAccess.remove_absolute(ProjectSettings.globalize_path(SaveData.test_path))
+	SaveData.loaded = false
+	SaveData.load_game()                       # 只剩埋点文件了
+	var licensed_back: bool = SaveData.licensed
+	var r := License.verify(TOOL_CODE)
+	var ok: bool = (not licensed_back and not bool(r["ok"]))
+	print("  9 删档防复用 · 删存档后授权已丢=%s · 旧码仍被拒=%s（%s）· %s" % [
+		"是" if not licensed_back else "否", "是" if not bool(r["ok"]) else "否",
+		str(r["reason"]), _ok(ok)])
 
 
 ## 7 密钥缺失（公开仓库 clone 下来的样子）：优雅降级，不能崩也不能误判

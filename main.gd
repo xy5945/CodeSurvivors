@@ -409,7 +409,11 @@ func _ready() -> void:
 			var code := a.substr("--licredeem=".length())
 			var res := License.verify(code)
 			if bool(res["ok"]):
-				License.apply(int(res["days"]))
+				if not License.apply(int(res["days"]), code):
+					print("[激活] 拒绝 · 本机申请码 %s · 原因：这张码已经在本机用过了" % [
+						License.machine_code()])
+					get_tree().quit()
+					return
 				print("[激活] 成功 · 本机申请码 %s · 时长 %s · 剩余 %d 天" % [
 					License.machine_code(),
 					"永久" if bool(res["permanent"]) else "%d 天" % int(res["days"]),
