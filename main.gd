@@ -214,6 +214,35 @@ func _ready() -> void:
 		get_tree().quit()
 		return
 
+	# --resultlayout：开面板后**等两帧**再量真实布局。
+	# 同步量到的只是"最小尺寸"，排版要等容器真正 sort 过才算数 ——
+	# 玩家看到的是等过帧之后的那一版，所以必须单独验一次。
+	if OS.get_cmdline_user_args().has("--resultlayout"):
+		_set_gameplay_ui(false)
+		for case in [["满配+解锁", true, "测试工程师", true],
+				["满配无解锁", true, "", true], ["空 Build", false, "", false]]:
+			for u in UpgradeDefs.UPGRADES:
+				sim.loadout.levels[str(u["id"])] = int(u["max"]) if bool(case[3]) else 0
+			sim.loadout.recompute()
+			sim.victory = bool(case[1])
+			sim.dead = not bool(case[1])
+			result.debug_reset()
+			result.open(sim, knowledge.unlocked_count(), KnowledgeDB.total(), str(case[2]))
+			await RenderingServer.frame_post_draw
+			await RenderingServer.frame_post_draw
+			await RenderingServer.frame_post_draw
+			var lay2: Dictionary = result.debug_layout()
+			var pr2: Rect2 = lay2["panel"]
+			var br2: Rect2 = lay2["buttons"]
+			var lr2: Rect2 = lay2["build"]
+			var ok2: bool = (br2.end.y <= pr2.end.y + 0.6 and lr2.end.y <= pr2.end.y + 0.6
+				and pr2.position.y >= -0.6 and pr2.end.y <= 360.6)
+			print("[layout] %s · 面板 y=%.1f h=%.1f · 按钮底 %.1f / 面板底 %.1f%s · %s" % [
+				case[0], pr2.position.y, pr2.size.y, br2.end.y, pr2.end.y,
+				" · 紧凑" if bool(lay2["compact"]) else "", "OK" if ok2 else "FAIL"])
+		get_tree().quit()
+		return
+
 	# --resultshot=win|lose：直接开结算面板截图（结算会暂停整棵树，
 	# --shot 的倒计时在暂停时跑不动，所以单独给一条路径）
 	for a in OS.get_cmdline_user_args():
@@ -532,6 +561,37 @@ func _resulttest() -> void:
 	_click_button(1)
 	print("  C 按钮 · 再来一局=%s · 退出=%s" % [
 		"OK" if hits[0] else "FAIL", "OK" if hits[1] else "FAIL"])
+
+	# E 布局：内容不能溢出面板 —— 面板是手工排的，Godot 对溢出既不裁剪也不报错，
+	# 只能量数字。重点看最底下的按钮行：它一旦被顶出面板底边，
+	# 玩家看到的就是"按钮和面板重叠"。
+	for case in [["满配+解锁", true, "测试工程师", true], ["满配无解锁", true, "", true], ["空 Build", false, "", false]]:
+		result.debug_reset()
+		sim.victory = bool(case[1])
+		sim.dead = not bool(case[1])
+		# Build 那行是面板里唯一会换行的块，也是最容易被撑爆的 ——
+		# 必须真的把 6 武器 5 被动全点满，否则测的是"空 Build"，量不出问题
+		for u in UpgradeDefs.UPGRADES:
+			sim.loadout.levels[str(u["id"])] = int(u["max"]) if bool(case[3]) else 0
+		sim.loadout.recompute()
+		_end_delay = -1.0
+		_update_end(0.016)
+		_update_end(1.0)
+		_update_end(1.0)
+		if str(case[2]) != "":
+			result.open(sim, knowledge.unlocked_count(), KnowledgeDB.total(), str(case[2]))
+		var lay: Dictionary = result.debug_layout()
+		var pr: Rect2 = lay["panel"]
+		var br: Rect2 = lay["buttons"]
+		var lr: Rect2 = lay["build"]
+		var over_btn: float = maxf(0.0, br.end.y - pr.end.y)
+		var over_build: float = maxf(0.0, lr.end.y - pr.end.y)
+		var ok: bool = over_btn < 0.6 and over_build < 0.6 and pr.end.y <= 360.0
+		print("     块高 %s" % " ".join(PackedStringArray(lay["parts"])))
+		print("  E 布局 · %s · 面板 %.0f 高（内容 %.0f%s）· 按钮溢出 %.1f · %s" % [
+			case[0], pr.size.y, float(lay["content"]),
+			" · 紧凑" if bool(lay["compact"]) else "", over_btn,
+			"OK" if ok else "FAIL (Build 溢出 %.1f)" % over_build])
 
 	# D 关闭后恢复
 	result.debug_reset()

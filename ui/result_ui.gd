@@ -20,11 +20,17 @@ signal quit_requested
 ## 立刻弹会让玩家觉得"莫名其妙就结束了"，1.4 秒刚好够反应过来发生了什么。
 const END_DELAY := 1.4
 
-# ---- 面板尺寸：Build 行会随升级数量换行，面板要跟着长高（见 _fit_build）----
+# ---- 面板尺寸 ----
+# 高度不再是写死的公式：内容填完后让 VBox 自己报最小高度，面板照着撑
+# （见 _relayout）。原因写在 _relayout 上方 —— 估行数那套会把按钮挤出面板。
 const PANEL_W := 460.0
-const PANEL_H := 278.0
-const PANEL_PAD := 18.0     # content_margin 左右，算可用文字宽度要用
-const PANEL_MAX_H := 318.0  # 视口 360，上下至少各留 21
+const PANEL_MIN_H := 258.0
+const PANEL_MAX_H := 330.0  # 视口 360，上下各留 15
+const PAD_X := 18.0
+const PAD_TOP := 14.0
+const PAD_BOTTOM := 16.0
+# 三段留白：标题下 / 数据表下 / Build 与按钮之间
+const SPACER_H: Array[float] = [8.0, 8.0, 12.0]
 
 # ---- 配色 ----
 const C_WIN := Color(1.0, 0.88, 0.40, 1.0)
@@ -36,16 +42,23 @@ const C_KEY := Color(0.58, 0.70, 0.82, 0.95)
 const C_VAL := Color(0.96, 0.98, 1.0, 0.98)
 const C_SUB := Color(0.62, 0.74, 0.86, 0.9)
 const C_UNLOCK := Color(1.0, 0.86, 0.40, 1.0)
-# 解锁提示这一行的高度（字号 12 + 行距），面板要按它加高
-const UNLOCK_LINE_H := 20.0
 
 var _dim: ColorRect
 var _panel: Panel
+var _col: VBoxContainer
 var _title: Label
 var _sub: Label
 var _unlock: Label
+var _unlock_box: PanelContainer
 var _rows: VBoxContainer
 var _build: Label
+var _btn_box: HBoxContainer
+var _spacers: Array[Control] = []
+var _compact := false
+# 开面板后再量几帧：第一次量的时候 Label 还没按新文本重新分行，
+# 报出来的高度是错的（实测空 Build 都能报 193）。面板暂停时 _process 照样跑，
+# 补两帧就能收口，玩家看不到这 30ms 的变化。
+var _relayout_ticks := 0
 var _open := false
 var _prev_r := false
 var _prev_esc := false
@@ -69,12 +82,14 @@ func open(sim: Sim, unlocked: int, total: int, unlock_msg := "") -> void:
 	_title.text = "BUILD SUCCESSFUL" if win else "FATAL ERROR"
 	_title.add_theme_color_override("font_color", C_WIN if win else C_LOSE)
 	_sub.text = "编译成功，程序全部跑通，可以交付了" if win else "程序已崩溃 · 进程被系统终止"
-	# 解锁提示单独占一行：它是"这一局最大的收获"，混在副标题里会被一眼略过。
+	# 解锁提示单独占一条：它是"这一局最大的收获"，混在副标题里会被一眼略过。
 	_unlock.text = ("新角色解锁　" + unlock_msg) if unlock_msg != "" else ""
-	_unlock.visible = unlock_msg != ""
+	_unlock_box.visible = unlock_msg != ""
 	_fill_rows(sim, unlocked, total)
 	_build.text = _build_text(sim)
-	_fit_build(_build.text, 1 if unlock_msg != "" else 0)
+	# 内容都填完了才量高度 —— 顺序反了量到的是上一局的高度
+	_relayout(_build.text)
+	_relayout_ticks = 2
 
 	_dim.visible = true
 	_open = true
@@ -95,25 +110,60 @@ func _fill_rows(sim: Sim, unlocked: int, total: int) -> void:
 	_row("知识卡解锁", "%d / %d" % [unlocked, total])
 
 
-## Build 那一行最多 11 项（6 武器 + 5 被动），424px 宽放不下，一定会换行。
-## 但 VBox 里的 autowrap Label 只按"一行"要高度，多出来的行会被裁掉 ——
-## 所以这里量出实际行数，手动撑高 Label，面板高度也跟着长（并重新居中）。
-## extra_lines：解锁提示占的额外行数。面板是按内容量出来的高度，
-## 多出一行就得显式加高，否则解锁提示会把 Build 那行顶出面板。
-func _fit_build(text: String, extra_lines: int = 0) -> void:
-	var f := _build.get_theme_font("font")
-	var fs := _build.get_theme_font_size("font_size")
-	if f == null:
-		return
-	var avail: float = PANEL_W - PANEL_PAD * 2.0
-	var w: float = f.get_string_size(text, fs).x
-	var n := maxi(1, ceili(w / maxf(avail, 1.0)))
-	var lh: float = f.get_height(fs)
-	_build.custom_minimum_size = Vector2(0.0, lh * float(n) + 2.0)
+## 面板排版的唯一入口：先让 Build 那行报出真实换行高度，再让 VBox 报出
+## 内容总高，面板照着撑，最后居中。
+##
+## 之前用的是"单行宽度 ÷ 可用宽度 = 行数"的估算，中文英文混排时经常少算一行
+## （少十几像素），而 VBox 超出的部分 Godot 既不裁剪也不报错 ——
+## 结果就是最底下的「再来一局 / 退出」被顶到面板外沿上，看着像两块 UI 重叠。
+## 换成 get_multiline_string_size + get_combined_minimum_size，两边都由引擎
+## 自己算，不会再对不上。
+func _relayout(_text: String) -> void:
+	# 先把 Build 的宽度钉成可用宽度。autowrap Label 的"最小宽度"只有一个字宽，
+	# 不钉住的话它按 1 字/行去换行，硬生生报出 200+ px 的最小高度
+	# （实测空 Build 都报 235），面板被撑爆，最底下的按钮就被顶到面板外面 ——
+	# 玩家看到的就是"按钮压在面板上"。钉住宽度后它才按真实行数算高度。
+	var avail: float = PANEL_W - PAD_X * 2.0
+	_build.custom_minimum_size = Vector2(avail, 0.0)
+	# 光设 custom_minimum_size 不够：Label 要等下一次排版才按新宽度重新分行，
+	# 这里同步设一次 size.x，让它当场按可用宽度排版 —— 量到的才是真行数。
+	_build.size.x = avail
 
-	var h: float = minf(PANEL_H + lh * float(n - 1) + UNLOCK_LINE_H * float(extra_lines), PANEL_MAX_H)
+	# 顺序不能反：先按正常间距量一次，塞不下才切紧凑并**重新量**。
+	# 只切不重量的话，面板拿到的是紧凑态的高度，实际排的却是正常间距 ——
+	# 差出来的十几像素正好把底部按钮顶出面板（实测溢出 13px）。
+	_set_compact(false)
+	var h := _content_height() + PAD_TOP + PAD_BOTTOM
+	if h > PANEL_MAX_H:
+		_set_compact(true)
+		h = _content_height() + PAD_TOP + PAD_BOTTOM
+	h = clampf(h, PANEL_MIN_H, PANEL_MAX_H)
 	_panel.size = Vector2(PANEL_W, h)
 	_panel.position = Vector2((640.0 - PANEL_W) * 0.5, (360.0 - h) * 0.5)
+
+
+## 逐块报最小高度，只给排查排版用（哪个块撑爆了一眼就看出来）
+func _part_sizes() -> Array:
+	var out: Array = []
+	for c in _col.get_children():
+		out.append("%s:%.0f" % [c.get_class(), c.get_combined_minimum_size().y])
+	return out
+
+
+func _content_height() -> float:
+	return _col.get_combined_minimum_size().y
+
+
+## 紧凑模式：只在内容真的装不下时开。省出来的十几像素换来的是
+## "按钮还在面板里"，比留白好看重要得多。
+func _set_compact(on: bool) -> void:
+	if _compact == on:
+		return
+	_compact = on
+	_col.add_theme_constant_override("separation", 2 if on else 3)
+	_rows.add_theme_constant_override("separation", 1 if on else 2)
+	for i in _spacers.size():
+		_spacers[i].custom_minimum_size.y = SPACER_H[i] * (0.6 if on else 1.0)
 
 
 func _build_text(sim: Sim) -> String:
@@ -150,14 +200,14 @@ func _build_ui() -> void:
 	_dim.color = C_DIM
 	add_child(_dim)
 
-	# 640x360 的视口：面板 460x278 居中，四周各留 90x41（高度可能被 _fit_build 抬高）
+	# 640x360 的视口：面板 460 宽居中，高度由 _relayout 按内容定（先给个中间值）
 	var root := Control.new()
 	root.set_anchors_preset(Control.PRESET_FULL_RECT)
 	_dim.add_child(root)
 
 	_panel = Panel.new()
-	_panel.position = Vector2((640.0 - PANEL_W) * 0.5, (360.0 - PANEL_H) * 0.5)
-	_panel.size = Vector2(PANEL_W, PANEL_H)
+	_panel.position = Vector2((640.0 - PANEL_W) * 0.5, (360.0 - PANEL_MIN_H) * 0.5)
+	_panel.size = Vector2(PANEL_W, PANEL_MIN_H)
 	root.add_child(_panel)
 
 	var sb := StyleBoxFlat.new()
@@ -171,14 +221,17 @@ func _build_ui() -> void:
 	sb.content_margin_bottom = 14
 	_panel.add_theme_stylebox_override("panel", sb)
 
-	var col := VBoxContainer.new()
-	col.set_anchors_preset(Control.PRESET_FULL_RECT)
-	col.offset_left = 18
-	col.offset_right = -18
-	col.offset_top = 14
-	col.offset_bottom = -14
-	col.add_theme_constant_override("separation", 3)
-	_panel.add_child(col)
+	_col = VBoxContainer.new()
+	# 关键：offsets 显式写四对。set_anchors_preset 在 _ready 阶段父节点还没布局，
+	# 算出来的 offset 是错的（表现为内容整体飘出面板，而且零报错）。
+	_col.set_anchors_preset(Control.PRESET_FULL_RECT)
+	_col.offset_left = PAD_X
+	_col.offset_right = -PAD_X
+	_col.offset_top = PAD_TOP
+	_col.offset_bottom = -PAD_BOTTOM
+	_col.add_theme_constant_override("separation", 3)
+	_panel.add_child(_col)
+	var col := _col
 
 	_title = Label.new()
 	_title.text = "BUILD SUCCESSFUL"
@@ -191,46 +244,59 @@ func _build_ui() -> void:
 	_sub.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	col.add_child(_sub)
 
+	# 解锁提示做成一条金边高亮条：裸文字夹在副标题和数据表之间太容易被略过，
+	# 而它是一局里最值得看见的东西。
+	_unlock_box = PanelContainer.new()
+	_unlock_box.visible = false
+	_unlock_box.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	var usb := StyleBoxFlat.new()
+	usb.bg_color = Color(1.0, 0.86, 0.40, 0.12)
+	usb.set_border_width_all(1)
+	usb.border_color = Color(1.0, 0.86, 0.40, 0.60)
+	usb.set_corner_radius_all(3)
+	usb.content_margin_left = 10
+	usb.content_margin_right = 10
+	usb.content_margin_top = 4
+	usb.content_margin_bottom = 4
+	_unlock_box.add_theme_stylebox_override("panel", usb)
+	col.add_child(_unlock_box)
+
 	_unlock = Label.new()
 	UiFont.apply(_unlock, 12, C_UNLOCK)
 	_unlock.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	_unlock.visible = false
-	_unlock.custom_minimum_size = Vector2(0.0, UNLOCK_LINE_H)
-	col.add_child(_unlock)
+	_unlock_box.add_child(_unlock)
 
-	col.add_child(_spacer(8))
+	col.add_child(_spacer(0))
 
 	_rows = VBoxContainer.new()
 	_rows.add_theme_constant_override("separation", 2)
 	col.add_child(_rows)
 
-	col.add_child(_spacer(8))
+	col.add_child(_spacer(1))
 
 	_build = Label.new()
 	UiFont.apply(_build, 9, C_KEY)
 	_build.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	col.add_child(_build)
 
-	col.add_child(_spacer(10))
+	col.add_child(_spacer(2))
 
-	var btn_box := HBoxContainer.new()
-	btn_box.alignment = BoxContainer.ALIGNMENT_CENTER
-	btn_box.add_theme_constant_override("separation", 16)
-	col.add_child(btn_box)
+	_btn_box = HBoxContainer.new()
+	_btn_box.alignment = BoxContainer.ALIGNMENT_CENTER
+	_btn_box.add_theme_constant_override("separation", 16)
+	col.add_child(_btn_box)
 
-	var b_restart := Button.new()
-	b_restart.text = "再来一局  (R)"
-	b_restart.custom_minimum_size = Vector2(170, 34)
-	UiFont.apply(b_restart, 12, C_VAL)
+	# 走 UiFont.make_button：标题页/选人/暂停用的是同一套，这里自己 new 一个
+	# Button 会拿到 Godot 默认的那块灰底，和暗色面板完全不是一套。
+	var b_restart := UiFont.make_button("再来一局  (R)", 12, C_VAL)
+	b_restart.custom_minimum_size = Vector2(170, 32)
 	b_restart.pressed.connect(func() -> void: restart_requested.emit())
-	btn_box.add_child(b_restart)
+	_btn_box.add_child(b_restart)
 
-	var b_quit := Button.new()
-	b_quit.text = "退出  (Esc)"
-	b_quit.custom_minimum_size = Vector2(150, 34)
-	UiFont.apply(b_quit, 12, C_KEY)
+	var b_quit := UiFont.make_button("退出  (Esc)", 12, C_KEY)
+	b_quit.custom_minimum_size = Vector2(150, 32)
 	b_quit.pressed.connect(func() -> void: quit_requested.emit())
-	btn_box.add_child(b_quit)
+	_btn_box.add_child(b_quit)
 
 
 func _row(key: String, val: String) -> void:
@@ -251,9 +317,11 @@ func _row(key: String, val: String) -> void:
 	hb.add_child(v)
 
 
-func _spacer(h: int) -> Control:
+## 留白按 SPACER_H 的索引取高度，并登记进 _spacers —— 紧凑模式要统一压它们。
+func _spacer(i: int) -> Control:
 	var c := Control.new()
-	c.custom_minimum_size = Vector2(0, h)
+	c.custom_minimum_size = Vector2(0, SPACER_H[i])
+	_spacers.append(c)
 	return c
 
 
@@ -262,6 +330,11 @@ func _spacer(h: int) -> Control:
 func _process(_delta: float) -> void:
 	if not _open:
 		return
+
+	if _relayout_ticks > 0:
+		_relayout(_build.text)
+		_relayout_ticks -= 1
+
 	var r := Input.is_key_pressed(KEY_R)
 	if r and not _prev_r:
 		restart_requested.emit()
@@ -274,6 +347,24 @@ func _process(_delta: float) -> void:
 
 
 # ---------------------------------------------------------------- 测试接口
+
+## 布局体检：把面板矩形和各块的实际位置交出去，测试端判断有没有溢出。
+## 结算面板是纯手工排的（没有锚定系统兜底），内容一多就会溢出面板底边，
+## 而 Godot 不会裁剪也不会报错 —— 只能靠量数字发现，肉眼看截图很容易漏。
+func debug_layout() -> Dictionary:
+	var pr := _panel.get_global_rect()
+	var br := _btn_box.get_global_rect()
+	var lr := _build.get_global_rect()
+	return {
+		"panel": pr,
+		"buttons": br,
+		"build": lr,
+		"content": _content_height(),
+		"parts": _part_sizes(),
+		"compact": _compact,
+		"unlock_visible": _unlock_box.visible,
+	}
+
 
 func debug_reset() -> void:
 	_open = false
