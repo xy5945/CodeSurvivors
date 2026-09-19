@@ -32,7 +32,7 @@ var char_id := CharDefs.DEFAULT_ID
 var char_def: Dictionary
 var char_trait := CharDefs.T_LEARN
 var char_hp_mult := 1.0       # 角色属性修正（乘算，见 char_defs）
-# 角色难度：**只作用于敌人血量**（0.6 简单 → 1.2 困难，见 char_defs.diff）。
+# 角色难度：**只作用于敌人血量**（0.7 简单 → 1.2 困难，见 char_defs.diff）。
 # 不动敌人速度/伤害/数量 —— 那几样一动，"这一局难在哪"就说不清了，
 # 玩家也没法判断是自己变强了还是敌人变弱了。
 var difficulty := 1.0
@@ -105,6 +105,7 @@ var seen_enemy_types: Array[bool] = []
 var gems_collected := 0
 var patches_collected := 0
 var chests_collected := 0
+var enemies_cleared := 0        # 被宝箱清屏消灭的敌人数（不含 Boss），平衡回归用
 var healed_total := 0.0          # 累计实际回血量（溢出部分不算），用于平衡回归
 var heal_on_ground := 0          # 地面上回血物数量（不磁吸，只能靠拾取减少）
 var heal_wasted := 0             # 满血时吃掉、回血全溢出的次数（玩家自己浪费掉的）
@@ -811,6 +812,43 @@ func _update_gems(dt: float) -> void:
 		i -= 1
 
 
+## 宝箱奖励之二：清掉玩家**视野矩形内**的所有敌人（Boss 免疫）。
+##
+## 判定用矩形而不是圆：玩家看到的就是一块矩形画面，用圆会杀掉四角看不见的
+## 敌人、又漏掉屏幕左右边缘看得见的敌人 —— 那才是 bug。
+##
+## 只把 hp 归零、不直接 e.kill()：走正常死亡流程才有击杀数、经验掉落、
+## 精英分裂、音效这些反馈。直接移除等于这些敌人"凭空蒸发"，
+## 玩家看到的是"屏幕突然空了"而不是"我把它们清了"。
+##
+## 标记完立刻 _reap()：_collect_gem 跑在 step 的 _reap 之后，不自己收一次的话
+## 这批敌人要等下一帧才死 —— 中间那一帧玩家会看到血条见底的敌人还站着，
+## 掉落和击杀数也都不在这一帧，很容易被误判成"清屏没生效"。
+## （_reap 是幂等的：它只处理 hp<=0，本帧早先的死敌在上一轮已被回收。）
+##
+## 清屏期间**新冒出来**的敌人不在这一批里：精英被清掉时会分裂出小怪，
+## 它们生成在标记之后，所以活得下来。这是刻意的 —— 分裂本来就是精英的招牌，
+## 一刀清干净等于把它这条机制顺手删了。想连它们一起清，去吃下一颗宝箱。
+##
+## Boss 不吃这一招：18 分钟的终局决战能被一个宝箱跳过的话，那场决战就不存在了。
+func clear_visible_enemies() -> int:
+	var boss_i := EnemyDB.idx_of(EnemyDB.BOSS_ID)
+	var hw := GameConfig.VIEW_W * 0.5
+	var hh := GameConfig.VIEW_H * 0.5
+	var e := enemies
+	var n := 0
+	for i in e.count:
+		if e.type[i] == boss_i:
+			continue
+		if absf(e.px[i] - player_x) > hw or absf(e.py[i] - player_y) > hh:
+			continue
+		e.hp[i] = 0.0
+		n += 1
+	if n > 0:
+		_reap()
+	return n
+
+
 func _collect_gem(i: int) -> void:
 	var k := gems.kind[i]
 	if k == GemPool.KIND_PATCH or k == GemPool.KIND_CHEST:
@@ -822,7 +860,12 @@ func _collect_gem(i: int) -> void:
 			heal_player(GameConfig.PATCH_HEAL)
 			patches_collected += 1
 		else:
-			heal_player(GameConfig.CHEST_HEAL)
+			# 宝箱：回满血 + 清掉视野内的敌人（Boss 除外）。
+			# heal_player 内部对 max_hp 截断，传 max_hp 就等于"补满"。
+			# 满血踩上去照常清屏 —— 清屏是它的另一半价值，
+			# 不该因为"血是满的"就跟着一起被吞掉。
+			heal_player(max_hp)
+			enemies_cleared += clear_visible_enemies()
 			chests_collected += 1
 		if was_full:
 			heal_wasted += 1

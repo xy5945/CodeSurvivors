@@ -17,7 +17,7 @@ extends RefCounted
 
 const KIND_GEM := 0      # 经验宝石：加经验
 const KIND_PATCH := 1    # 补丁包：回血
-const KIND_CHEST := 2    # 宝箱：精英怪必掉，大额回血（后续扩展成"开升级"）
+const KIND_CHEST := 2    # 宝箱：精英怪必掉 —— 拾取＝回满血 + 清掉视野内敌人（Boss 除外）
 
 var px := PackedFloat32Array()
 var py := PackedFloat32Array()

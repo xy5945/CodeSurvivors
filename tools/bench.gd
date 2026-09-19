@@ -187,9 +187,9 @@ static func run_smoke(minutes: float = 10.0, cid: String = "") -> void:
 		step += 1
 
 	print("")
-	print("结束：Lv %d · 击杀 %d · 拾取宝石 %d · 地面残留 %d · 补丁包 %d · 宝箱 %d%s" % [
+	print("结束：Lv %d · 击杀 %d · 拾取宝石 %d · 地面残留 %d · 补丁包 %d · 宝箱 %d · 清屏 %d%s" % [
 		sim.level, sim.kills, sim.gems_collected, sim.gems.count,
-		sim.patches_collected, sim.chests_collected,
+		sim.patches_collected, sim.chests_collected, sim.enemies_cleared,
 		" · 通关" if sim.victory else (" · Boss 仍存活" if sim.boss_active else "")
 	])
 	print("技能：精英 %d 次（冲刺 %d · 环形弹幕 %d · 死亡分裂 %d）· Boss %d 次（冲刺 %d · 环形 %d · 扇形 %d · 追踪 %d · 危险区 %d）· 召唤 %d 波" % [
@@ -1209,9 +1209,9 @@ static func _t_save_persist() -> void:
 		_ok(before == 2 and after == 2 and cleared_ok and reset_ok)])
 
 
-## 3 难度系数：0.6 / 0.8 / 1.0 / 1.1 / 1.2（只影响敌人血量）
+## 3 难度系数：0.7 / 0.85 / 1.0 / 1.1 / 1.2（只影响敌人血量）
 static func _t_save_diff() -> void:
-	var want := [0.6, 0.8, 1.0, 1.1, 1.2]
+	var want := [0.7, 0.85, 1.0, 1.1, 1.2]
 	var got: Array[float] = []
 	for c in CharDefs.CHARACTERS:
 		got.append(CharDefs.diff_of(str(c["id"])))
@@ -1220,7 +1220,7 @@ static func _t_save_diff() -> void:
 		if i >= got.size() or absf(got[i] - want[i]) > 0.0001:
 			ok = false
 	print("  3 难度系数 · %s · %s" % [
-		" → ".join(PackedStringArray(got.map(func(v: float) -> String: return "×%.1f" % v))),
+		" → ".join(PackedStringArray(got.map(func(v: float) -> String: return _diff_text(v)))),
 		_ok(ok)])
 
 
@@ -1247,6 +1247,18 @@ static func _t_save_hp() -> void:
 	print("  4 难度改血量 · 2 分钟垃圾文件 hp：%s" %
 		" / ".join(PackedStringArray(hps.map(func(v: float) -> String: return "%.1f" % v))))
 	print("            期望 = 22 × %.2f × 难度 · %s" % [grow, _ok(ok)])
+
+
+## 难度显示：0.85 绝不能被 %.1f 截成 0.8。
+## 打印值和实际值差一个档，比不打印更糟 —— 会让人以为改动没生效。
+## 去掉末尾的 0：0.70 → ×0.7、0.85 → ×0.85、1.00 → ×1。
+static func _diff_text(v: float) -> String:
+	var t := "%.2f" % v
+	while t.ends_with("0"):
+		t = t.substr(0, t.length() - 1)
+	if t.ends_with("."):
+		t = t.substr(0, t.length() - 1)
+	return "×" + t
 
 
 static func _ok(b: bool) -> String:
@@ -1765,7 +1777,8 @@ static func _composition(e: EnemyPool) -> String:
 
 ##
 ## 宝箱链路验证：在玩家面前 45px 放一只薄血精英，
-## 武器击杀 → 必掉宝箱 → **玩家自己走过去踩到** → 回血 50。
+## 武器击杀 → 必掉宝箱 → **玩家自己走过去踩到** →
+## 回满血 + 清掉视野内的敌人（视野外的不动、Boss 免疫）。
 ## 运行：godot --headless --path . -- --chesttest
 ##
 static func run_chest_test() -> void:
@@ -1776,10 +1789,32 @@ static func run_chest_test() -> void:
 	sim.setup()
 	sim.god_mode = true
 	sim.spawn_enabled = false
+	# setup() 会预铺一批最弱杂兵（开局正反馈用），必须清掉：
+	# 它们撒在场地各处、部分正好在视野内，清屏数量断言全是噪音。
+	# 这是 bench 里的既有惯例，见 --bosstest 那边的同款注释。
+	sim.enemies.clear()
 
-	# 先扣到 40 血：满血时回血会溢出被截断，healed_total 永远是 0，测不出回血
+	# 先扣到 40 血：满血时"回满"看不出任何变化，测不出奖励真的结算了
 	sim.player_hp = 40.0
 
+	# 视野内 3 只、视野外 2 只，**速度一律给 0**。
+	# 速度不能省：默认速度带 ±15% 随机，放远的杂兵会自己走进视野，
+	# "视野外的没被清掉"这条断言就会随机假失败。
+	# 视野内的都放在 180px 开外：起始长鞭 Lv1 只有 110 射程，
+	# 靠太近会被武器打死，就分不清是武器杀的还是清屏清的。
+	var bi := EnemyDB.BASIC_IDX
+	var in_view: Array[Vector2] = [
+		Vector2(240.0, 0.0), Vector2(-200.0, 120.0), Vector2(120.0, -170.0),
+	]
+	var out_view: Array[Vector2] = [Vector2(400.0, 0.0), Vector2(-380.0, 60.0)]
+	for off in in_view:
+		sim.enemies.spawn(sim.player_x + off.x, sim.player_y + off.y,
+			10.0, 0.0, EnemyDB.DEFS[bi].radius, bi)
+	for off in out_view:
+		sim.enemies.spawn(sim.player_x + off.x, sim.player_y + off.y,
+			10.0, 0.0, EnemyDB.DEFS[bi].radius, bi)
+
+	# 精英（薄血，让武器一刀带走）—— 击杀后必掉宝箱
 	var ei := EnemyDB.idx_of(EnemyDB.ELITE_ID)
 	sim.enemies.spawn(
 		sim.player_x + 45.0, sim.player_y,
@@ -1796,13 +1831,33 @@ static func run_chest_test() -> void:
 			chest_seen = true
 			break
 
-	print("击杀 %d · 拾取宝石 %d · 宝箱 %d · 累计回血 %.1f" % [
-		sim.kills, sim.gems_collected, sim.chests_collected, sim.healed_total
+	# 按视野矩形数一遍存活敌人 —— 与 Sim.clear_visible_enemies 同一套判定
+	var hw := GameConfig.VIEW_W * 0.5
+	var hh := GameConfig.VIEW_H * 0.5
+	var boss_i := EnemyDB.idx_of(EnemyDB.BOSS_ID)
+	var alive_in := 0
+	var alive_out := 0
+	for i in sim.enemies.count:
+		if sim.enemies.type[i] == boss_i:
+			continue
+		if absf(sim.enemies.px[i] - sim.player_x) > hw \
+				or absf(sim.enemies.py[i] - sim.player_y) > hh:
+			alive_out += 1
+		else:
+			alive_in += 1
+
+	var full_hp := sim.player_hp >= sim.max_hp - 0.001
+	print("击杀 %d · 宝箱 %d · 血量 %.0f/%.0f · 视野内剩余 %d（期望 0）· 视野外剩余 %d（期望 2）· 清屏消灭 %d" % [
+		sim.kills, sim.chests_collected, sim.player_hp, sim.max_hp,
+		alive_in, alive_out, sim.enemies_cleared,
 	])
-	if chest_seen and sim.chests_collected >= 1 and sim.healed_total >= GameConfig.CHEST_HEAL:
-		print("PASS：精英死亡 → 宝箱掉落 → 玩家走过去踩到 → 回血 %.0f，链路完整" % sim.healed_total)
+	if chest_seen and sim.chests_collected >= 1 and full_hp \
+			and alive_in == 0 and alive_out == 2 and sim.enemies_cleared >= 3:
+		print("PASS：精英死亡 → 宝箱掉落 → 走过去踩到 → 回满血 + 清掉视野内 %d 只，视野外 %d 只未受影响" % [
+			sim.enemies_cleared, alive_out])
 	else:
-		print("FAIL：宝箱链路有断点，逐项排查")
+		print("FAIL：宝箱链路有断点，逐项排查（满血 %s · 视野内 %d · 视野外 %d · 清屏 %d）" % [
+			_ok(full_hp), alive_in, alive_out, sim.enemies_cleared])
 
 
 ##
