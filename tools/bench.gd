@@ -187,9 +187,10 @@ static func run_smoke(minutes: float = 10.0, cid: String = "") -> void:
 		step += 1
 
 	print("")
-	print("结束：Lv %d · 击杀 %d · 拾取宝石 %d · 地面残留 %d · 补丁包 %d · 宝箱 %d · 清屏 %d%s" % [
+	print("结束：Lv %d · 击杀 %d · 拾取宝石 %d · 地面残留 %d · 补丁包 %d · 宝箱 %d · 清屏 %d · 合并 %d · 池溢出 %d%s" % [
 		sim.level, sim.kills, sim.gems_collected, sim.gems.count,
 		sim.patches_collected, sim.chests_collected, sim.enemies_cleared,
+		sim.gems_merged, sim.gems.overflow,
 		" · 通关" if sim.victory else (" · Boss 仍存活" if sim.boss_active else "")
 	])
 	print("技能：精英 %d 次（冲刺 %d · 环形弹幕 %d · 死亡分裂 %d）· Boss %d 次（冲刺 %d · 环形 %d · 扇形 %d · 追踪 %d · 危险区 %d）· 召唤 %d 波" % [
@@ -1797,15 +1798,18 @@ static func run_chest_test() -> void:
 	# 先扣到 40 血：满血时"回满"看不出任何变化，测不出奖励真的结算了
 	sim.player_hp = 40.0
 
-	# 视野内 3 只、视野外 2 只，**速度一律给 0**。
+	# 视野内 18 只、视野外 2 只，**速度一律给 0**。
 	# 速度不能省：默认速度带 ±15% 随机，放远的杂兵会自己走进视野，
 	# "视野外的没被清掉"这条断言就会随机假失败。
-	# 视野内的都放在 180px 开外：起始长鞭 Lv1 只有 110 射程，
-	# 靠太近会被武器打死，就分不清是武器杀的还是清屏清的。
+	# 视野内的全部摆在 |dy| = 140 的两行上，离玩家的起始武器射程（长鞭 Lv1 只有 110）
+	# 留足余量 —— 靠太近会被武器打死，就分不清是武器杀的还是清屏清的。
+	# 数量刻意放到 18：方案 A（清屏掉落合并）的要点是"掉落数从 N 降到 1"，
+	# 三五只的时候合并和不合并根本看不出差别。
 	var bi := EnemyDB.BASIC_IDX
-	var in_view: Array[Vector2] = [
-		Vector2(240.0, 0.0), Vector2(-200.0, 120.0), Vector2(120.0, -170.0),
-	]
+	var in_view: Array[Vector2] = []
+	for col in 9:
+		for row in 2:
+			in_view.append(Vector2(-240.0 + float(col) * 60.0, -140.0 + float(row) * 280.0))
 	var out_view: Array[Vector2] = [Vector2(400.0, 0.0), Vector2(-380.0, 60.0)]
 	for off in in_view:
 		sim.enemies.spawn(sim.player_x + off.x, sim.player_y + off.y,
@@ -1847,17 +1851,110 @@ static func run_chest_test() -> void:
 			alive_in += 1
 
 	var full_hp := sim.player_hp >= sim.max_hp - 0.001
+
+	# 方案 A：清屏掉落必须合并成一颗高价值宝石。
+	# 数宝石这件事必须紧跟在 break 之后 —— 合并宝石落在玩家脚边 24px，
+	# 下一帧就被磁吸吃掉，晚一帧这里什么都数不到。
+	var gem_n := 0
+	var merged_found := false
+	for i in sim.gems.count:
+		if sim.gems.kind[i] != GemPool.KIND_GEM:
+			continue
+		gem_n += 1
+		# 清屏杀的全是杂兵（xp 都是 1），所以合并宝石的价值应恰好等于清屏数
+		if sim.gems.value[i] == sim.enemies_cleared:
+			merged_found = true
+	var merge_ok := merged_found and sim.gems_merged == sim.enemies_cleared \
+			and gem_n < sim.enemies_cleared
+
 	print("击杀 %d · 宝箱 %d · 血量 %.0f/%.0f · 视野内剩余 %d（期望 0）· 视野外剩余 %d（期望 2）· 清屏消灭 %d" % [
 		sim.kills, sim.chests_collected, sim.player_hp, sim.max_hp,
 		alive_in, alive_out, sim.enemies_cleared,
 	])
+	print("清屏掉落：合并进单颗宝石 %d 颗 · 地上实际残留宝石 %d 颗（合并前应为 %d 颗）· 合并宝石价值 %s" % [
+		sim.gems_merged, gem_n, sim.enemies_cleared, _ok(merged_found)])
 	if chest_seen and sim.chests_collected >= 1 and full_hp \
-			and alive_in == 0 and alive_out == 2 and sim.enemies_cleared >= 3:
-		print("PASS：精英死亡 → 宝箱掉落 → 走过去踩到 → 回满血 + 清掉视野内 %d 只，视野外 %d 只未受影响" % [
-			sim.enemies_cleared, alive_out])
+			and alive_in == 0 and alive_out == 2 and sim.enemies_cleared >= 3 and merge_ok:
+		print("PASS：精英死亡 → 宝箱掉落 → 走过去踩到 → 回满血 + 清掉视野内 %d 只，视野外 %d 只未受影响；掉落合并 %d -> 1 颗（地上残留 %d）" % [
+			sim.enemies_cleared, alive_out, sim.gems_merged, gem_n])
 	else:
-		print("FAIL：宝箱链路有断点，逐项排查（满血 %s · 视野内 %d · 视野外 %d · 清屏 %d）" % [
-			_ok(full_hp), alive_in, alive_out, sim.enemies_cleared])
+		print("FAIL：宝箱链路有断点，逐项排查（满血 %s · 视野内 %d · 视野外 %d · 清屏 %d · 合并 %d/%d · 残留 %d）" % [
+			_ok(full_hp), alive_in, alive_out, sim.enemies_cleared,
+			sim.gems_merged, sim.enemies_cleared, gem_n])
+
+	# ---------------- 池饱和压力回归 ----------------
+	# 这是方案 A（清屏掉落合并）存在的**唯一理由**，必须单独压一遍：
+	# 不合并时，一轮清屏就在地上留下 N 颗无人认领的宝石，
+	# 几轮下来 MAX_GEMS(4096) 被顶满，spawn() 从此静默丢弃 ——
+	# 表现是"经验吃不到、等级停滞、打不过 Boss"，而且完全不报错。
+	# 实测（--smoke=20）：改宝箱当天 7 颗宝箱就堆出 3331 颗，等级卡在 Lv43 没通关。
+	# 这里连续做 10 轮"放 300 只 + 清屏"，全程不捡：
+	# 合并生效的话地面每轮只多 1 颗，10 轮下来 10 颗，离上限远得很。
+	print("")
+	print("=== 清屏掉落合并 · 池饱和压力（假设玩家一颗都不捡）===")
+	sim.gems.clear()
+	var rounds := 10
+	var merged_before := sim.gems_merged
+	var total_killed := 0
+	var worst := 0
+	for r in rounds:
+		for c in 20:
+			for row in 15:
+				var ox := -304.0 + float(c) * 32.0
+				var oy := -168.0 + float(row) * 24.0
+				# 玩家周围 140px 内不放：模拟里没有 step 驱动武器，
+				# 但留出这块空地能保证"地上每一颗宝石都来自清屏"，账目才干净
+				if absf(ox) < 140.0 and absf(oy) < 140.0:
+					continue
+				sim.enemies.spawn(sim.player_x + ox, sim.player_y + oy,
+					10.0, 0.0, EnemyDB.DEFS[bi].radius, bi)
+		var killed := sim.clear_visible_enemies()
+		total_killed += killed
+		worst = maxi(worst, sim.gems.count)
+		print("  第 %2d 轮：清屏 %3d 只 · 地面宝石 %d 颗（不合并会是 %d 颗）" % [
+			r + 1, killed, sim.gems.count, total_killed])
+	var merged_delta := sim.gems_merged - merged_before
+	if worst <= rounds and merged_delta == total_killed and total_killed > 1000:
+		print("PASS：%d 轮共清屏 %d 只，地面峰值只有 %d 颗宝石（不合并会是 %d 颗，池上限 %d）" % [
+			rounds, total_killed, worst, total_killed, GameConfig.MAX_GEMS])
+	else:
+		print("FAIL：清屏掉落仍在堆积（清屏 %d · 合并 %d · 地面峰值 %d）" % [
+			total_killed, merged_delta, worst])
+
+	# ---------------- 池满替换 ----------------
+	# 合并只能压住"清屏"这一条路，基础击杀照样会在地面上堆宝石（实测后期能自然顶到 4096）。
+	# 池满之后如果还是静默丢弃，玩家身边就再也掉不出东西 —— 空位腾不出来，经验永久断供。
+	# 这里直接把池灌满，验证溢出掉落会顶掉最远的那颗，而不是消失。
+	print("")
+	print("=== 池满替换（顶掉最远，不丢新掉落）===")
+	sim.gems.clear()
+	var cap := GameConfig.MAX_GEMS
+	for i in cap:
+		sim.gems.spawn(sim.player_x + 1000.0 + float(i) * 10.0, sim.player_y, 1)
+	var farthest_x := sim.gems.px[cap - 1]
+	# 再往"更远处"塞一个补丁包：回血物不能磁吸、只能走过去踩，被顶掉等于白掉的宝箱
+	sim.gems.spawn(sim.player_x + 60000.0, sim.player_y, 0, GemPool.KIND_PATCH)
+	var ok_spawn := sim.gems.spawn(sim.player_x + 30.0, sim.player_y + 5.0, 777)
+	var new_found := false
+	var far_gone := true
+	var patch_alive := false
+	for i in sim.gems.count:
+		if sim.gems.kind[i] == GemPool.KIND_GEM and sim.gems.value[i] == 777 \
+				and absf(sim.gems.px[i] - (sim.player_x + 30.0)) < 0.01:
+			new_found = true
+		if absf(sim.gems.px[i] - farthest_x) < 0.01:
+			far_gone = false
+		if sim.gems.kind[i] == GemPool.KIND_PATCH \
+				and absf(sim.gems.px[i] - (sim.player_x + 60000.0)) < 0.01:
+			patch_alive = true
+	print("池容量 %d · 溢出掉落返回值 %s · 数量 %d（应仍是 %d）· 新宝石落地 %s · 最远那颗被顶掉 %s · 补丁包幸存 %s" % [
+		cap, _ok(ok_spawn), sim.gems.count, cap,
+		_ok(new_found), _ok(far_gone), _ok(patch_alive)])
+	if ok_spawn and sim.gems.count == cap and new_found and far_gone and patch_alive:
+		print("PASS：池满后新掉落顶掉最远的那颗，数量封顶在 %d，回血物不受影响" % cap)
+	else:
+		print("FAIL：池满替换有问题（顶掉最远 %s · 回血物幸存 %s）" % [
+			_ok(far_gone), _ok(patch_alive)])
 
 
 ##

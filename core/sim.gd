@@ -106,10 +106,19 @@ var gems_collected := 0
 var patches_collected := 0
 var chests_collected := 0
 var enemies_cleared := 0        # 被宝箱清屏消灭的敌人数（不含 Boss），平衡回归用
+var gems_merged := 0             # 清屏时被合并进单颗宝石的掉落数（方案 A，见 clear_visible_enemies）
 var healed_total := 0.0          # 累计实际回血量（溢出部分不算），用于平衡回归
 var heal_on_ground := 0          # 地面上回血物数量（不磁吸，只能靠拾取减少）
 var heal_wasted := 0             # 满血时吃掉、回血全溢出的次数（玩家自己浪费掉的）
 var time := 0.0
+
+# 清屏掉落合并的状态位（方案 A，见 clear_visible_enemies）。
+# 只在一次清屏的 _reap 期间为 true。用成员变量而不是给 _reap 加参数，
+# 是因为 _reap 是所有死亡路径的公共出口，加参数要改一堆调用点，
+# 而合并这件事只有"批量清屏"一条路径需要。
+var merging_drops := false
+var _merged_xp := 0
+var _merged_n := 0
 
 # 供 headless 基准测试使用：关掉刷怪与玩家受伤，才能稳定测出指定敌人数下的耗时
 var spawn_enabled := true
@@ -692,7 +701,15 @@ func _reap() -> void:
 					loadout.breakpoint_w.chain_on_death(self, e.px[i], e.py[i], e.freeze[i])
 			# 经验按类型给：精英 20 点、大怪 3~4 点，杂兵 1 点。
 			# 掉落价值必须跟"杀它花的功夫"成正比，否则玩家没有打精英的动力。
-			gems.spawn(e.px[i], e.py[i], EnemyDB.DEFS[ti].xp)
+			#
+			# 清屏期间不逐只落宝石，只把经验攒起来（见 clear_visible_enemies）：
+			# 一次清屏几百只，逐只掉会把 4096 的掉落池顶满。
+			var xp_gain: int = EnemyDB.DEFS[ti].xp
+			if merging_drops:
+				_merged_xp += xp_gain
+				_merged_n += 1
+			else:
+				gems.spawn(e.px[i], e.py[i], xp_gain)
 			if ti == boss_i:
 				# 终局奖励：经验宝石 + 三个宝箱（回血够玩家撑过庆祝时刻）
 				for k in 3:
@@ -714,7 +731,12 @@ func _reap() -> void:
 				_split_elite(e.px[i], e.py[i])
 			# 补丁包是"额外掉落"：宝石必掉，保证经验曲线不受回血概率影响。
 			# 位置随机偏一点，否则两个掉落物完全重叠，看不出是两个。
-			elif randf() < GameConfig.PATCH_DROP_CHANCE:
+			#
+			# 清屏期间一律不掉：几百只的期望掉率能出好几个，而它们散落在整屏、
+			# 玩家根本不会走回去捡 —— 唯一的作用是白占 MAX_HEAL_ON_GROUND 名额，
+			# 把后面的掉落顶掉（heal_on_ground 只增不减的坑踩过两次）。
+			# 何况踩宝箱本身就已经回满血了，这里的补丁包是纯粹的冗余。
+			elif not merging_drops and randf() < GameConfig.PATCH_DROP_CHANCE:
 				_drop_heal(
 					e.px[i] + randf_range(-8.0, 8.0),
 					e.py[i] + randf_range(-8.0, 8.0),
@@ -772,6 +794,9 @@ func _drop_heal(x: float, y: float, chest: bool) -> void:
 ## 倒序遍历 + swap_remove：被搬到位置 i 的元素是"最后一个"，
 ## 它在本次循环中已经被处理过了，所以 i -= 1 跳过它是安全的。
 func _update_gems(dt: float) -> void:
+	# 把玩家位置喂给掉落池：池满时它要靠这个判断"顶掉哪一颗"（见 GemPool._replace_farthest_gem）
+	gems.focus_x = player_x
+	gems.focus_y = player_y
 	var pickup := loadout.pickup_range
 	var pickup_sq := pickup * pickup
 	var heal_r_sq := GameConfig.PATCH_PICKUP_RADIUS * GameConfig.PATCH_PICKUP_RADIUS
@@ -831,12 +856,23 @@ func _update_gems(dt: float) -> void:
 ## 一刀清干净等于把它这条机制顺手删了。想连它们一起清，去吃下一颗宝箱。
 ##
 ## Boss 不吃这一招：18 分钟的终局决战能被一个宝箱跳过的话，那场决战就不存在了。
+##
+## 掉落合并（方案 A）：清屏不逐只掉宝石，而是把这一批敌人的经验全部加总，
+## 最后合成**一颗**高价值宝石落在玩家脚下。经验总量一分不少，掉落数从 N 降到 1。
+## 为什么必须这么做：清屏一次能在脚下堆几百颗宝石，而它们不会自己飞过来（磁吸半径 95），
+## 反复几次就把 4096 的掉落池顶满 —— 池满后 gems.spawn() 静默丢弃，
+## 之后连精英宝箱都掉不出来，表现是"经验吃不到、等级停滞、打不过 Boss"。
+## 整局模拟（--smoke=20）实测过：不合并时 7 颗宝箱就把池顶到 3331 颗、等级卡在 Lv43 未通关。
 func clear_visible_enemies() -> int:
 	var boss_i := EnemyDB.idx_of(EnemyDB.BOSS_ID)
 	var hw := GameConfig.VIEW_W * 0.5
 	var hh := GameConfig.VIEW_H * 0.5
 	var e := enemies
 	var n := 0
+	# 打开合并开关：这一轮 _reap 里所有宝石掉落都被攒进 _merged_xp，不落地。
+	merging_drops = true
+	_merged_xp = 0
+	_merged_n = 0
 	for i in e.count:
 		if e.type[i] == boss_i:
 			continue
@@ -846,6 +882,14 @@ func clear_visible_enemies() -> int:
 		n += 1
 	if n > 0:
 		_reap()
+	merging_drops = false
+	if _merged_xp > 0:
+		# 合并成一颗高价值宝石，落在玩家脚下偏 24px。
+		# 偏这一点点是为了让它"看得见"（否则像是凭空蒸发），
+		# 同时仍在基础磁吸范围（PICKUP_RANGE 95）内 ——
+		# 清屏的奖励必须立刻到手，不该让玩家回头满屏捡。
+		gems.spawn(player_x + 24.0, player_y, _merged_xp)
+		gems_merged += _merged_n
 	return n
 
 
