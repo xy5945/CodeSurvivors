@@ -518,6 +518,7 @@ static func run_tune() -> void:
 	_t_whip_stun()
 	_t_opening_damage()
 	_t_orbit_lifesteal()
+	_t_breakpoint_flat()
 	print("")
 
 
@@ -621,12 +622,45 @@ static func _t_opening_damage() -> void:
 	_w6run(sim2, 0.2)
 	var gc_dmg := 1000.0 - sim2.enemies.hp[0]
 
-	var ok: bool = (float(bp1["dmg"]) >= 40.0 and bp_kills >= 6
+	var ok: bool = (float(bp1["dmg"]) >= 30.0 and bp_kills >= 6
 		and float(gc1["dmg"]) >= 30.0 and absf(gc_dmg - float(gc1["dmg"])) < 0.01)
 	print("  开局伤害 · 断点调试 L1 伤害 %.0f → 一发清掉 %d/8 只开局杂兵（hp10）" % [
 		float(bp1["dmg"]), bp_kills])
 	print("             垃圾回收 L1 伤害 %.0f → 实测打出 %.0f · %s" % [
 		float(gc1["dmg"]), gc_dmg, "OK" if ok else "FAIL"])
+
+
+## 断点调试：伤害全程不成长（定位 = 控制强、伤害低），
+## 但开局两分钟（血量成长到 1.96 倍）必须还打得死当期杂兵。
+##
+## 判定用的是「2 分钟那一刻最硬的杂兵」：垃圾文件 hp22 × (1 + 120×0.008) ≈ 43，
+## 一发 36 × 冻结易伤 1.5 = 54 刚好够 —— 这也是伤害不能再往下压的原因。
+static func _t_breakpoint_flat() -> void:
+	var flat := true
+	var dmgs: Array[float] = []
+	for lv in 8:
+		var d := float(UpgradeDefs.stats_for("breakpoint", lv + 1)["dmg"])
+		dmgs.append(d)
+		if absf(d - dmgs[0]) > 0.0001:
+			flat = false
+
+	var s1 := UpgradeDefs.stats_for("breakpoint", 1)
+	var dps8: float = (_dps_one("breakpoint", 1) as Array)[0]
+
+	# 开局两分钟：最硬的杂兵（垃圾文件 hp22）在当时血量成长下的一击必杀
+	var sim := _w6mk("breakpoint")
+	sim.loadout.levels["breakpoint"] = 1
+	sim.loadout.recompute()
+	var hp_at120: float = 22.0 * (1.0 + 120.0 * GameConfig.ENEMY_HP_GROWTH)
+	_w6ring(sim, 8, 60.0, hp_at120)
+	_w6run(sim, float(s1["cd"]) + 0.5)
+	var kills2m: int = sim.kills
+
+	var ok: bool = (flat and dps8 < 19.0 and kills2m >= 6)
+	print("  断点调试 · 伤害 L1~L8 = %.0f（全程不变=%s）· 满级单体 DPS %.1f" % [
+		dmgs[0], "是" if flat else "否", dps8])
+	print("             2 分钟最硬杂兵 hp%.0f → 一发清掉 %d/8 · %s" % [
+		hp_at120, kills2m, "OK" if ok else "FAIL"])
 
 
 ## 循环护盾吸血：开局回血、环绕物越多越弱、满级归零
@@ -759,6 +793,17 @@ static func run_dmg_table() -> void:
 		print("  %s %8.0f  %8.0f   %6.1f 倍   %2d / 12   %s" % [
 			str(u["name"]).rpad(12), single, multi, amp, int(a12[1]), _attrs(u)])
 
+	print("")
+	var worst_name := ""
+	var worst_v := 1e9
+	for u in UpgradeDefs.UPGRADES:
+		if int(u["kind"]) != UpgradeDefs.KIND_WEAPON:
+			continue
+		var v: float = (_dps_one(str(u["id"]), 1) as Array)[0]
+		if v < worst_v:
+			worst_v = v
+			worst_name = str(u["name"])
+	print("  单体 DPS 最低：%s（%.0f）—— 它的定位是控制，不是输出" % [worst_name, worst_v])
 	print("")
 	print("  注：木桩打不死，所以「击杀才触发」的机制在这张表里测不出来 ——")
 	print("      垃圾回收（残血 ≤35% 直接回收）和全量重编译（每杀一只 CD -0.03s）实战会强不少。")
