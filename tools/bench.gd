@@ -1209,9 +1209,9 @@ static func _t_save_persist() -> void:
 		_ok(before == 2 and after == 2 and cleared_ok and reset_ok)])
 
 
-## 3 难度系数：0.8 / 0.9 / 1.0 / 1.1 / 1.2（只影响敌人血量）
+## 3 难度系数：0.6 / 0.8 / 1.0 / 1.1 / 1.2（只影响敌人血量）
 static func _t_save_diff() -> void:
-	var want := [0.8, 0.9, 1.0, 1.1, 1.2]
+	var want := [0.6, 0.8, 1.0, 1.1, 1.2]
 	var got: Array[float] = []
 	for c in CharDefs.CHARACTERS:
 		got.append(CharDefs.diff_of(str(c["id"])))

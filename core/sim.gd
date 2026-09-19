@@ -32,7 +32,7 @@ var char_id := CharDefs.DEFAULT_ID
 var char_def: Dictionary
 var char_trait := CharDefs.T_LEARN
 var char_hp_mult := 1.0       # 角色属性修正（乘算，见 char_defs）
-# 角色难度：**只作用于敌人血量**（0.8 简单 → 1.2 困难，见 char_defs.diff）。
+# 角色难度：**只作用于敌人血量**（0.6 简单 → 1.2 困难，见 char_defs.diff）。
 # 不动敌人速度/伤害/数量 —— 那几样一动，"这一局难在哪"就说不清了，
 # 玩家也没法判断是自己变强了还是敌人变弱了。
 var difficulty := 1.0
