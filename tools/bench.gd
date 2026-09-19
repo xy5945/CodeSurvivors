@@ -148,14 +148,16 @@ static func run_survival(max_minutes: float = 20.0) -> void:
 	])
 
 
-static func run_smoke(minutes: float = 10.0) -> void:
+## cid 为空时用默认角色；--smoke=5 --char=qa 可以直接冒烟某个角色的开局
+## （测试工程师拿的是断点调试，开局手感必须单独看过）。
+static func run_smoke(minutes: float = 10.0, cid: String = "") -> void:
 	print("")
 	print("=== 代码幸存者 · 核心循环冒烟 ===")
 	print("自动游玩 %.0f 分钟 · 绕圈移动 · 升级随机选 · 无敌模式（只看循环与数值）" % minutes)
 	print("")
 
 	var sim := Sim.new()
-	sim.setup()
+	sim.setup(cid if cid != "" else CharDefs.DEFAULT_ID)
 	sim.god_mode = true
 
 	var steps := int(minutes * 60.0 / GameConfig.FIXED_DT)
@@ -514,6 +516,8 @@ static func run_tune() -> void:
 	print("")
 	_t_forever_radius()
 	_t_whip_stun()
+	_t_opening_damage()
+	_t_orbit_lifesteal()
 	print("")
 
 
@@ -591,6 +595,74 @@ static func _t_whip_stun() -> void:
 		"是" if float(s5["stun"]) == 0.0 else "否", float(s8["stun"]), moved, fz_max])
 	print("             断点调试满级定身 %.2fs → 长鞭只有它的 %.0f%% · %s" % [
 		bp_dur, fz_max / bp_dur * 100.0, "OK" if ok else "FAIL"])
+
+
+## 开局伤害：断点调试 / 垃圾回收 的 L1 必须能杀掉开局的小怪（hp 8~16）。
+##
+## 这两把原来是"前三级零伤害"（纯控制 / 纯斩杀），拿它们开局的角色
+## 在前几分钟只能靠走位熬 —— 那不是难度，是没有反馈。
+static func _t_opening_damage() -> void:
+	var bp1 := UpgradeDefs.stats_for("breakpoint", 1)
+	var gc1 := UpgradeDefs.stats_for("gc", 1)
+
+	# 断点调试 L1：一次爆发（每 5 秒）要能清掉开局档的小怪
+	var sim := _w6mk("breakpoint")
+	sim.loadout.levels["breakpoint"] = 1
+	sim.loadout.recompute()
+	_w6ring(sim, 8, 60.0, 10.0)        # hp 10 = 最弱杂兵
+	_w6run(sim, 1.0)
+	var bp_kills: int = sim.kills
+
+	# 垃圾回收 L1：一次回收（每 8 秒）对满血目标也要打出表里的伤害
+	var sim2 := _w6mk("gc")
+	sim2.loadout.levels["gc"] = 1
+	sim2.loadout.recompute()
+	sim2.enemies.spawn(sim2.player_x + 60.0, sim2.player_y, 1000.0, 0.0, 10.0, 0)
+	_w6run(sim2, 0.2)
+	var gc_dmg := 1000.0 - sim2.enemies.hp[0]
+
+	var ok: bool = (float(bp1["dmg"]) >= 40.0 and bp_kills >= 6
+		and float(gc1["dmg"]) >= 30.0 and absf(gc_dmg - float(gc1["dmg"])) < 0.01)
+	print("  开局伤害 · 断点调试 L1 伤害 %.0f → 一发清掉 %d/8 只开局杂兵（hp10）" % [
+		float(bp1["dmg"]), bp_kills])
+	print("             垃圾回收 L1 伤害 %.0f → 实测打出 %.0f · %s" % [
+		float(gc1["dmg"]), gc_dmg, "OK" if ok else "FAIL"])
+
+
+## 循环护盾吸血：开局回血、环绕物越多越弱、满级归零
+static func _t_orbit_lifesteal() -> void:
+	# 数据表层面：全程非递增，且 L8 必须是 0
+	var vals: Array[float] = []
+	var mono := true
+	for lv in 8:
+		var v := float(UpgradeDefs.stats_for("orbit", lv + 1)["lifesteal"])
+		if vals.size() > 0 and v > vals[-1] + 0.0001:
+			mono = false
+		vals.append(v)
+
+	# 行为层面：L1 真的回血，L8 一点都不回
+	var sim := _w6mk("orbit")
+	sim.loadout.levels["orbit"] = 1
+	sim.loadout.recompute()
+	sim.player_hp = sim.max_hp * 0.5
+	var hp0: float = sim.player_hp
+	_w6ring(sim, 6, 60.0, 100000.0)
+	_w6run(sim, 3.0)
+	var healed := sim.player_hp - hp0
+
+	var sim2 := _w6mk("orbit")          # 默认 Lv8
+	sim2.player_hp = sim2.max_hp * 0.5
+	var hp1: float = sim2.player_hp
+	_w6ring(sim2, 6, 60.0, 100000.0)
+	_w6run(sim2, 3.0)
+	var healed8 := sim2.player_hp - hp1
+
+	var ok: bool = (mono and vals[0] > 0.0 and vals[-1] == 0.0
+		and healed > 0.0 and absf(healed8) < 0.001)
+	print("  循环护盾吸血 · 每级 %.1f→%.1f（单调递减=%s）· 满级 %.1f" % [
+		vals[0], vals[6], "是" if mono else "否", vals[-1]])
+	print("             3 秒内回血：L1（2 环绕物）%.1f → L8（6 环绕物）%.1f · %s" % [
+		healed, healed8, "OK" if ok else "FAIL"])
 
 
 ##

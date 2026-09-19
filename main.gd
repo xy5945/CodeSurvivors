@@ -119,7 +119,7 @@ func _ready() -> void:
 	for a in OS.get_cmdline_user_args():
 		if a.begins_with("--smoke"):
 			set_process(false)
-			Bench.run_smoke(float(a.split("=")[-1]) if "=" in a else 10.0)
+			Bench.run_smoke(float(a.split("=")[-1]) if "=" in a else 10.0, _cmd_char())
 			get_tree().quit()
 			return
 
@@ -700,9 +700,15 @@ func _on_pause_resume() -> void:
 	_resume_game()
 
 
-## 暂停里的「退出游戏」走和结算面板同一条路
+## 暂停里的「退出游戏」= 放弃这一局、回到标题页，**不是关掉程序**。
+## 走重载场景而不是手工 reset：手清要动七八个对象池 + 空间网格 + 所有渲染器
+## + 知识卡 + 音效，漏一个就是"标题页背后还跑着上一局的怪"。
+## 重载后 _ready 会重新建一局并打开标题页，和刚启动时的状态完全一致。
 func _on_pause_quit() -> void:
-	_on_quit()
+	get_tree().paused = false
+	Input.set_mouse_mode(Input.MOUSE_MODE_VISIBLE)
+	Sfx.restart_bgm()
+	get_tree().reload_current_scene()
 
 
 func _on_pause_help() -> void:

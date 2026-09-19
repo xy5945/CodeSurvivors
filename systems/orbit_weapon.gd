@@ -9,8 +9,19 @@ extends RefCounted
 ##
 ## 位置写在 ox/oy 里供渲染层读取 —— 表现层不重复算一遍三角函数。
 ##
+## 吸血（lifesteal）：开局唯一的续航手段，随环绕物增多而衰减，满级归零。
+##   目的是提高开局存活率 —— 那时只有 2 个环绕物、输出低，被摸两下就很危险；
+##   到满级有 6 个环绕物、输出足够，再给吸血就是"站着不动也死不了"。
+##   **必须有独立的冷却**：环绕物碰到几个敌人就回几次的话，
+##   敌群越密回得越多，反而变成"越危险越安全"的正反馈（长鞭踩过同一个坑）。
+##   现在每秒最多回一次，和低等级时的接触伤害（约 15 血/秒）相比只是续命量。
+##
 
 const MAX_ORBITERS := 12
+
+# 吸血触发的最小间隔。想调吸血强度请改数据表里的 lifesteal，不要改这个值 ——
+# 它只是防止"一帧碰到 8 个敌人回 8 次"的限流器。
+const LIFESTEAL_CD := 0.5
 
 # 数值（由 Loadout.recompute 写入）
 var enabled := false
@@ -19,6 +30,7 @@ var damage := 0.0
 var radius := 0.0
 var spin := 0.0
 var hit_cd := 0.0
+var lifesteal := 0.0   # 每次吸血回复的生命（0 = 不吸血）
 var evolved := false    # 嵌套循环：内外双层反向环
 var draw_count := 0     # 渲染层要画的环绕物总数（进化后是 count 的两倍）
 
@@ -26,6 +38,7 @@ var draw_count := 0     # 渲染层要画的环绕物总数（进化后是 count
 var angle := 0.0
 var ox := PackedFloat32Array()
 var oy := PackedFloat32Array()
+var _heal_cd := 0.0
 
 
 func _init() -> void:
@@ -40,6 +53,7 @@ func apply_stats(level: int, lo: Loadout) -> void:
 	radius = float(s["radius"])
 	spin = float(s["spin"])
 	hit_cd = float(s["hit_cd"])
+	lifesteal = float(s["lifesteal"])
 	enabled = true
 	evolved = lo.is_evolved("orbit")
 	# 嵌套循环：外圈照旧，内圈半径 62%、反向转得更快、伤害 60%。
@@ -53,6 +67,9 @@ func apply_stats(level: int, lo: Loadout) -> void:
 func update(dt: float, sim) -> void:
 	if not enabled:
 		return
+
+	if _heal_cd > 0.0:
+		_heal_cd = maxf(0.0, _heal_cd - dt)
 
 	angle += spin * dt
 	if angle > TAU:
@@ -95,5 +112,8 @@ func update(dt: float, sim) -> void:
 			e.hp[j] -= dmg * e.dmg_mult(j)
 			e.flash[j] = GameConfig.ORBIT_FLASH
 			e.orb_cd[j] = hit_cd
+			if lifesteal > 0.0 and _heal_cd <= 0.0:
+				sim.heal_player(lifesteal)
+				_heal_cd = LIFESTEAL_CD
 
 		i += 1
