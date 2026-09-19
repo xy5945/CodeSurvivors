@@ -122,7 +122,8 @@ func _draw_auras() -> void:
 	if lo.forever != null and lo.forever.enabled:
 		var run: bool = lo.forever.running
 		var base := C_FOREVER if run else C_FOREVER_OFF
-		var r := lo.forever.radius
+		# 画的是"这一帧实际生效的范围"：血量越低圈越大，玩家能直接看见补偿。
+		var r := lo.forever.cur_radius
 		var spin: float = sim.time * 1.6 if run else 0.0
 		_dashed_ring(pos, r, base, 10, 0.5, spin, 2.0)
 		if run:

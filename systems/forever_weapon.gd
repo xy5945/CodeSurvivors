@@ -14,14 +14,24 @@ extends RefCounted
 ## 设计意图（来自武器文档）：它是"用血量换输出"的极端选项。
 ## 和"异常捕获"类免疫效果配合会质变，那是有意留的隐藏组合。
 ##
+## 低血扩圈（RADIUS_GROW）：血量越低，力场范围越大。
+##   只有"掉血"没有"安全感"的武器没人敢拿 —— 玩家看到血条一直往下走，
+##   第一反应是把它换掉，而不是研究怎么用。所以让代价自己长出补偿：
+##   血越少，圈越大，敌人要在更远的地方就开始被烧。
+##   满血时范围就是表里的值（和以前完全一致），血见底时最大 1.6 倍。
+##   伤害、自损、命中上限、停机安全阀全部不变，只动范围这一个量。
+##
 
 const SHUTOFF_HP_FRAC := 0.30
 const RESTART_HP_FRAC := 0.42
 const TICK_FLASH := 0.08
+# 低血扩圈系数：radius_now = radius * (1 + RADIUS_GROW * (1 - hp_frac))
+const RADIUS_GROW := 0.60
 
 var enabled := false
 var dps := 0.0
-var radius := 0.0
+var radius := 0.0        # 表里的基础范围
+var cur_radius := 0.0    # 这一帧实际生效的范围（渲染层要读它，环才会跟着变大）
 var self_dps := 0.0
 var hit_cap := 0
 
@@ -38,6 +48,7 @@ func apply_stats(level: int, lo: Loadout) -> void:
 	self_dps = float(s["self_dps"])
 	hit_cap = int(s["hit_cap"])
 	enabled = true
+	cur_radius = radius
 	evolved = lo.is_evolved("forever")
 
 
@@ -46,6 +57,9 @@ func update(dt: float, sim) -> void:
 		return
 
 	var frac: float = sim.player_hp / maxf(sim.max_hp, 1.0)
+	# 低血扩圈：血越少范围越大。放在停机判断之前算，
+	# 这样停机时渲染层画的灰环也是"它启动后会有的范围"，不会突然缩一下。
+	cur_radius = radius * (1.0 + RADIUS_GROW * (1.0 - clampf(frac, 0.0, 1.0)))
 	if evolved:
 		# 守护进程：不再停机。血量低于 30% 时输出和自损一起减半（降级运行）。
 		#
@@ -78,10 +92,11 @@ func update(dt: float, sim) -> void:
 	var e: EnemyPool = sim.enemies
 	var cx: float = sim.player_x
 	var cy: float = sim.player_y
-	var r2 := radius * radius
+	var r := cur_radius
+	var r2 := r * r
 	var dmg: float = dps_now * dt
 
-	var n: int = sim.grid.query(cx, cy, radius, hit_cap)
+	var n: int = sim.grid.query(cx, cy, r, hit_cap)
 	var hits := 0
 	var k := 0
 	while k < n and hits < hit_cap:

@@ -9,6 +9,20 @@ extends RefCounted
 ##   θ <= 45°  <=>  dot > 0 且 dot² >= cos²(45°) · |d|²  = 0.5 · d2
 ## 这在每帧几百次判定的热路径上是实打实的开销差异。
 ##
+## 控制手段（stun，L6 起）：
+##   原来是击退 push=14，实测满级后敌人根本贴不上来 —— 一鞭把人推开 14 像素、
+##   冷却只有 0.95 秒，敌人的推进速度赶不上被推的距离，场面变成"打不到人的安全"。
+##   这既让长鞭变成无脑解，也让"敌人围上来"这个核心压力消失。
+##   改成定身一瞬间（0.2 ~ 0.32 秒）：敌人还在原地往前挪，只是挪得慢了，
+##   压力还在，但不会像击退那样把敌人清出射程。
+##
+##   强度必须明显低于断点调试（0.8 ~ 1.8 秒、范围 90 ~ 160、带 +50% 易伤）：
+##   长鞭的定身只有 0.2~0.32 秒，约为断点满级的 1/6，断点是"开团信号"，
+##   长鞭只是"抽一下让它们顿一顿"。
+##
+##   注意顺序：先结算伤害、再上冻结。反过来的话长鞭自己的这一鞭
+##   就吃到冻结的 +50% 易伤，伤害曲线会凭空抬一截。
+##
 ## 分支方向（branches）：
 ##   1 = 只打正面
 ##   2 = 正面 + 反面（L4）
@@ -27,7 +41,7 @@ var damage := 0.0
 var cd_base := 0.0
 var reach := 0.0
 var branches := 1
-var push := 0.0
+var stun := 0.0        # 命中时定身时长（秒），0 = 只造成伤害
 var heal := 0.0
 var hit_cap := 0        # 每条分支的命中上限（0 = 不限）
 var evolved := false    # 三元表达式：四向十字挥击
@@ -45,7 +59,7 @@ func apply_stats(level: int, lo: Loadout) -> void:
 	reach = float(s["reach"])
 	branches = int(s["branches"])
 	hit_cap = int(s["hit_cap"])
-	push = float(s["push"])
+	stun = float(s["stun"])
 	heal = float(s["heal"])
 	enabled = true
 	evolved = lo.is_evolved("whip")
@@ -133,7 +147,8 @@ func _sector(sim, branch: int) -> void:
 		last_hit_count += 1
 		hits += 1
 
-		if push > 0.0 and d2 > 1.0:
-			var inv := push / sqrt(d2)
-			e.px[i] += dx * inv
-			e.py[i] += dy * inv
+		if stun > 0.0:
+			# 乘 cc_res：Boss 0.18 / 精英 0.5 / 杂兵 1.0。
+			# 不乘的话满级长鞭每 0.95 秒就能让 Boss 顿一下，配合高频武器
+			# 会退化成"站桩输出"，Boss 的五技能轮盘永远转不起来。
+			e.freeze[i] = maxf(e.freeze[i], stun * e.cc_res[i])

@@ -499,6 +499,101 @@ static func _t_rebuild() -> void:
 
 
 ##
+## 手感调整自检：永真力场的低血扩圈 + 分支长鞭的「定身替掉击退」。
+##
+## 两条都是"只改一个量、其余机制不动"的调整，所以断言也只盯那一个量：
+##   永真力场：满血范围 = 表值；血越少范围越大；并且真能烧到表值外的敌人。
+##   分支长鞭：命中后敌人**不再位移**，只是顿一下；且这一下明显短于断点调试。
+##
+## 运行：godot --headless --path . -- --tunetest
+##
+static func run_tune() -> void:
+	print("")
+	print("=== 手感调整 · 机制自检 ===")
+	print("只验新增的那一个量，其余机制必须与改动前一致")
+	print("")
+	_t_forever_radius()
+	_t_whip_stun()
+	print("")
+
+
+## 永真力场：血越少圈越大（伤害 / 自损 / 停机安全阀一律不变）
+static func _t_forever_radius() -> void:
+	var s8 := UpgradeDefs.stats_for("forever", 8)
+	var base: float = float(s8["radius"])
+
+	var sim := _w6mk("forever")
+	_w6run(sim, GameConfig.FIXED_DT * 2.0)
+	var r_full: float = sim.loadout.forever.cur_radius
+
+	# 取 35% 而不是 10%：未进化的力场低于 30% 会停机，
+	# 停机后既不掉血也不输出，扩圈自然无从谈起 —— 拿 10% 测只会测到"停机了"。
+	sim.player_hp = sim.max_hp * 0.35
+	_w6run(sim, GameConfig.FIXED_DT)
+	var r_low: float = sim.loadout.forever.cur_radius
+
+	# 真正的行为验证：摆一只木桩在"满血范围之外、低血范围之内"。
+	# 光看半径数字变大了不算数 —— 命中判定还用旧半径的话照样打不到。
+	var far := base + 25.0
+	var sim2 := _w6mk("forever")
+	sim2.enemies.spawn(sim2.player_x + far, sim2.player_y, 1000000.0, 0.0, 10.0, 0)
+	var hp0 := sim2.enemies.hp[0]
+	_w6run(sim2, 1.0)
+	var dmg_full := hp0 - sim2.enemies.hp[0]
+	sim2.player_hp = sim2.max_hp * 0.35
+	_w6run(sim2, 1.0)
+	var dmg_low := hp0 - sim2.enemies.hp[0] - dmg_full
+
+	# 守护进程（进化）不停机，所以它还能一路吃到 1.6 倍上限。
+	var sim3 := _evomk("forever", "malloc", true)
+	sim3.player_hp = sim3.max_hp * 0.30
+	_w6run(sim3, GameConfig.FIXED_DT)
+	var r_e30: float = sim3.loadout.forever.cur_radius
+	sim3.player_hp = sim3.max_hp * 0.10
+	_w6run(sim3, GameConfig.FIXED_DT)
+	var r_e10: float = sim3.loadout.forever.cur_radius
+	var run10: bool = sim3.loadout.forever.running
+
+	var ok: bool = (absf(r_full - base) < 0.01 and r_low > base * 1.2
+		and dmg_full < 0.001 and dmg_low > 1.0 and run10 and r_e10 > r_e30)
+	print("  永真力场 · 满血 %.0f（= 表值 %.0f）→ 35%%血 %.0f → 守护进程 10%%血 %.0f" % [
+		r_full, base, r_low, r_e10])
+	print("             距 %.0f（满血圈外）的木桩：满血掉血 %.2f → 35%%血掉血 %.1f · %s" % [
+		far, dmg_full, dmg_low, "OK" if ok else "FAIL"])
+
+
+## 分支长鞭：击退已移除，改为定身一瞬间；强度必须明显低于断点调试
+static func _t_whip_stun() -> void:
+	var s5 := UpgradeDefs.stats_for("whip", 5)
+	var s8 := UpgradeDefs.stats_for("whip", 8)
+	var bp8 := UpgradeDefs.stats_for("breakpoint", 8)
+	var bp_dur: float = float(bp8["freeze"])
+
+	var sim := _w6mk("whip")
+	# 朝向固定朝右，木桩摆在正前方 90 像素（射程 148 之内）
+	sim.enemies.spawn(sim.player_x + 90.0, sim.player_y, 1000000.0, 0.0, 10.0, 0)
+	var x0 := sim.enemies.px[0]
+	var y0 := sim.enemies.py[0]
+
+	# 逐帧跑，取冻结时长的峰值：固定跑 1.2 秒再采样的话，
+	# 采到的可能是"刚上冻"也可能是"快解冻"，会随版本悄悄翻车。
+	var fz_max := 0.0
+	var steps := int(1.2 / GameConfig.FIXED_DT)
+	for i in steps:
+		sim.step(GameConfig.FIXED_DT, 0.0, 0.0)
+		if sim.enemies.freeze[0] > fz_max:
+			fz_max = sim.enemies.freeze[0]
+	var moved := absf(sim.enemies.px[0] - x0) + absf(sim.enemies.py[0] - y0)
+
+	var ok: bool = (float(s5["stun"]) == 0.0 and moved < 0.5
+		and fz_max > 0.05 and fz_max < bp_dur * 0.5)
+	print("  分支长鞭 · Lv5 无定身=%s · Lv8 表值 %.2fs · 命中后位移 %.2f px（击退已移除）· 实测定身 %.2fs" % [
+		"是" if float(s5["stun"]) == 0.0 else "否", float(s8["stun"]), moved, fz_max])
+	print("             断点调试满级定身 %.2fs → 长鞭只有它的 %.0f%% · %s" % [
+		bp_dur, fz_max / bp_dur * 100.0, "OK" if ok else "FAIL"])
+
+
+##
 ## 进化系统自检。
 ##
 ## 进化改的是**行为**，所以每一条断言的都是"有没有换一种打法"，
@@ -621,9 +716,11 @@ static func _dps_one(wid: String, n: int) -> Array:
 		sim.enemies.spawn(sim.player_x + 90.0, sim.player_y, HP, 0.0, 10.0, 0)
 	else:
 		_w6arc(sim, n, 90.0, HP)
-	# 木桩必须钉死在原地。分支长鞭满级带击退 push=14，30 秒能把它推出 400 像素，
+	# 木桩必须钉死在原地。分支长鞭满级原本带击退 push=14，30 秒能把它推出 400 像素，
 	# 一旦出了 reach=148 就再也打不到 —— 那样测出来的是「击退有多强」，
 	# 而不是「这把武器输出多少」（实测没钉位时单体只有 5 DPS，纯属假象）。
+	# 现在击退已改成定身（不推移位置），钉位不再是长鞭的刚需，但留着当通用保险：
+	# 以后任何带位移的效果都不会悄悄把 DPS 表带偏。
 	var px0 := sim.enemies.px.duplicate()
 	var py0 := sim.enemies.py.duplicate()
 	var hp0 := sim.enemies.hp.duplicate()

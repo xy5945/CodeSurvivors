@@ -314,6 +314,12 @@ func _ready() -> void:
 		get_tree().quit()
 		return
 
+	if OS.get_cmdline_user_args().has("--tunetest"):
+		set_process(false)
+		Bench.run_tune()
+		get_tree().quit()
+		return
+
 	# --shot 可带帧数：godot --path . -- --shot=10（截开局空场，适合看玩家本身）
 	var shot_arg := ""
 	for a in OS.get_cmdline_user_args():
