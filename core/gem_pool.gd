@@ -50,7 +50,9 @@ func _init(cap: int) -> void:
 
 func spawn(x: float, y: float, v: int, k: int = KIND_GEM) -> bool:
 	if count >= px.size():
-		return _replace_farthest_gem(x, y, v, k)
+		if k != KIND_GEM:
+			return false        # 池满时不掉回血物：它承接不了被顶掉那颗的经验（见下）
+		return _replace_farthest_gem(x, y, v)
 	px[count] = x
 	py[count] = y
 	value[count] = v
@@ -75,7 +77,7 @@ func spawn(x: float, y: float, v: int, k: int = KIND_GEM) -> bool:
 ##
 ## 回血物（补丁包 / 宝箱）不在候选里：它们不能磁吸，玩家得自己走过去踩，
 ## 被顶掉就等于白捡了一个宝箱。它们另有 MAX_HEAL_ON_GROUND 的上限管着。
-func _replace_farthest_gem(x: float, y: float, v: int, k: int) -> bool:
+func _replace_farthest_gem(x: float, y: float, v: int) -> bool:
 	var far_i := -1
 	var far_d := -1.0
 	for i in count:
@@ -90,11 +92,17 @@ func _replace_farthest_gem(x: float, y: float, v: int, k: int) -> bool:
 	if far_i < 0:
 		return false        # 池子里一颗普通宝石都没有（理论上不可能）：真的放不下了
 	overflow += 1
+	# 承接：把被顶掉那颗的经验一起带走，新宝石替它站在玩家身边。
+	# 这一行让"池满"从"有代价的降级"变成"零代价的搬家" ——
+	# 经验一点不丢，丢的只是"躺在地图远处"这个位置。
+	# 没有它的话，池满每溢出一次就真丢一份经验（实测一局能溢出 1.4 万次），
+	# 而且那个损失会随池容量来回变，容量反而成了隐性平衡杠杆。
+	var carried := value[far_i]
 	px[far_i] = x
 	py[far_i] = y
-	value[far_i] = v
+	value[far_i] = v + carried
 	mag[far_i] = 0
-	kind[far_i] = k
+	kind[far_i] = KIND_GEM
 	return true
 
 

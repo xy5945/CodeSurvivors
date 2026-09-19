@@ -1929,17 +1929,25 @@ static func run_chest_test() -> void:
 	print("=== 池满替换（顶掉最远，不丢新掉落）===")
 	sim.gems.clear()
 	var cap := GameConfig.MAX_GEMS
-	for i in cap:
+	# 补丁包要放在"最远处"，而且必须**先放** —— 池满之后回血物是掉不进来的
+	# （它承接不了被顶掉那颗的经验）。回血物不能磁吸、只能走过去踩，
+	# 被顶掉就等于白掉的宝箱，所以它必须全程幸存。
+	sim.gems.spawn(sim.player_x + 60000.0, sim.player_y, 0, GemPool.KIND_PATCH)
+	for i in cap - 1:
 		sim.gems.spawn(sim.player_x + 1000.0 + float(i) * 10.0, sim.player_y, 1)
 	var farthest_x := sim.gems.px[cap - 1]
-	# 再往"更远处"塞一个补丁包：回血物不能磁吸、只能走过去踩，被顶掉等于白掉的宝箱
-	sim.gems.spawn(sim.player_x + 60000.0, sim.player_y, 0, GemPool.KIND_PATCH)
+	var farthest_value := sim.gems.value[cap - 1]
+	var before_total := 0
+	for i in sim.gems.count:
+		before_total += sim.gems.value[i]
 	var ok_spawn := sim.gems.spawn(sim.player_x + 30.0, sim.player_y + 5.0, 777)
 	var new_found := false
 	var far_gone := true
 	var patch_alive := false
+	var total := 0
 	for i in sim.gems.count:
-		if sim.gems.kind[i] == GemPool.KIND_GEM and sim.gems.value[i] == 777 \
+		total += sim.gems.value[i]
+		if sim.gems.kind[i] == GemPool.KIND_GEM and sim.gems.value[i] == 777 + farthest_value \
 				and absf(sim.gems.px[i] - (sim.player_x + 30.0)) < 0.01:
 			new_found = true
 		if absf(sim.gems.px[i] - farthest_x) < 0.01:
@@ -1947,14 +1955,20 @@ static func run_chest_test() -> void:
 		if sim.gems.kind[i] == GemPool.KIND_PATCH \
 				and absf(sim.gems.px[i] - (sim.player_x + 60000.0)) < 0.01:
 			patch_alive = true
+	# 总值守恒：被顶掉那颗的经验必须被新宝石原样承接，一点都不能少。
+	# 这条断言是"池满零代价"的全部证据 —— 缺了它，扩容多少都还是在丢经验。
+	var expect_total := before_total + 777
+	var carry_ok := total == expect_total
 	print("池容量 %d · 溢出掉落返回值 %s · 数量 %d（应仍是 %d）· 新宝石落地 %s · 最远那颗被顶掉 %s · 补丁包幸存 %s" % [
 		cap, _ok(ok_spawn), sim.gems.count, cap,
 		_ok(new_found), _ok(far_gone), _ok(patch_alive)])
-	if ok_spawn and sim.gems.count == cap and new_found and far_gone and patch_alive:
-		print("PASS：池满后新掉落顶掉最远的那颗，数量封顶在 %d，回血物不受影响" % cap)
+	print("经验承接：新宝石价值 %d = 新的 777 + 被顶掉的 %d · 池内总价值 %d（期望 %d，不承接会掉到 %d）" % [
+		777 + farthest_value, farthest_value, total, expect_total, expect_total - farthest_value])
+	if ok_spawn and sim.gems.count == cap and new_found and far_gone and patch_alive and carry_ok:
+		print("PASS：池满后新掉落顶掉最远的那颗，数量封顶在 %d，经验被完整承接、一颗不丢，回血物不受影响" % cap)
 	else:
-		print("FAIL：池满替换有问题（顶掉最远 %s · 回血物幸存 %s）" % [
-			_ok(far_gone), _ok(patch_alive)])
+		print("FAIL：池满替换有问题（顶掉最远 %s · 回血物幸存 %s · 经验承接 %s）" % [
+			_ok(far_gone), _ok(patch_alive), _ok(carry_ok)])
 
 
 ##

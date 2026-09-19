@@ -65,6 +65,15 @@ func _ready() -> void:
 	# 只要带了参数就是测试/截图流程，解锁一律不落盘
 	_no_save = not OS.get_cmdline_user_args().is_empty()
 
+	# --seed=N：固定全局随机种子，只服务于参数对照实验。
+	# 没有它就没法做严格 A/B：--smoke 的自动选卡、掉落、刷怪全是随机的，
+	# 同一份代码连跑两局能给出 Lv65 通关和 Lv35 卡死两种相反的结论。
+	# 必须放在下面这一串测试分支之前 —— 它们每一个都在自己那儿直接 quit 了。
+	# （不带测试参数、只带 --seed 正常游玩时会被下面的 randomize() 覆盖，无所谓）
+	for a in OS.get_cmdline_user_args():
+		if a.begins_with("--seed="):
+			seed(int(a.split("=")[-1]))
+
 	if OS.get_cmdline_user_args().has("--bench"):
 		set_process(false)      # quit() 不会立刻生效，否则 _process 会跑几帧空指针
 		Bench.run()
