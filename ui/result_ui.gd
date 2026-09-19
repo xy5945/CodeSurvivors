@@ -35,11 +35,15 @@ const C_BORDER := Color(0.30, 0.44, 0.56, 0.85)
 const C_KEY := Color(0.58, 0.70, 0.82, 0.95)
 const C_VAL := Color(0.96, 0.98, 1.0, 0.98)
 const C_SUB := Color(0.62, 0.74, 0.86, 0.9)
+const C_UNLOCK := Color(1.0, 0.86, 0.40, 1.0)
+# 解锁提示这一行的高度（字号 12 + 行距），面板要按它加高
+const UNLOCK_LINE_H := 20.0
 
 var _dim: ColorRect
 var _panel: Panel
 var _title: Label
 var _sub: Label
+var _unlock: Label
 var _rows: VBoxContainer
 var _build: Label
 var _open := false
@@ -59,14 +63,18 @@ func is_open() -> bool:
 
 ## 打开结算。win 由 sim.victory 决定，unlocked/total 由知识卡系统给
 ## （一局解锁了几张卡是这个面板最值得炫耀的数字）。
-func open(sim: Sim, unlocked: int, total: int) -> void:
+## unlock_msg：这一局通关解锁的新角色名，空串表示没解锁（死亡或已解锁过）。
+func open(sim: Sim, unlocked: int, total: int, unlock_msg := "") -> void:
 	var win := sim.victory
 	_title.text = "BUILD SUCCESSFUL" if win else "FATAL ERROR"
 	_title.add_theme_color_override("font_color", C_WIN if win else C_LOSE)
 	_sub.text = "编译成功，程序全部跑通，可以交付了" if win else "程序已崩溃 · 进程被系统终止"
+	# 解锁提示单独占一行：它是"这一局最大的收获"，混在副标题里会被一眼略过。
+	_unlock.text = ("新角色解锁　" + unlock_msg) if unlock_msg != "" else ""
+	_unlock.visible = unlock_msg != ""
 	_fill_rows(sim, unlocked, total)
 	_build.text = _build_text(sim)
-	_fit_build(_build.text)
+	_fit_build(_build.text, 1 if unlock_msg != "" else 0)
 
 	_dim.visible = true
 	_open = true
@@ -90,7 +98,9 @@ func _fill_rows(sim: Sim, unlocked: int, total: int) -> void:
 ## Build 那一行最多 11 项（6 武器 + 5 被动），424px 宽放不下，一定会换行。
 ## 但 VBox 里的 autowrap Label 只按"一行"要高度，多出来的行会被裁掉 ——
 ## 所以这里量出实际行数，手动撑高 Label，面板高度也跟着长（并重新居中）。
-func _fit_build(text: String) -> void:
+## extra_lines：解锁提示占的额外行数。面板是按内容量出来的高度，
+## 多出一行就得显式加高，否则解锁提示会把 Build 那行顶出面板。
+func _fit_build(text: String, extra_lines: int = 0) -> void:
 	var f := _build.get_theme_font("font")
 	var fs := _build.get_theme_font_size("font_size")
 	if f == null:
@@ -101,7 +111,7 @@ func _fit_build(text: String) -> void:
 	var lh: float = f.get_height(fs)
 	_build.custom_minimum_size = Vector2(0.0, lh * float(n) + 2.0)
 
-	var h: float = minf(PANEL_H + lh * float(n - 1), PANEL_MAX_H)
+	var h: float = minf(PANEL_H + lh * float(n - 1) + UNLOCK_LINE_H * float(extra_lines), PANEL_MAX_H)
 	_panel.size = Vector2(PANEL_W, h)
 	_panel.position = Vector2((640.0 - PANEL_W) * 0.5, (360.0 - h) * 0.5)
 
@@ -180,6 +190,13 @@ func _build_ui() -> void:
 	UiFont.apply(_sub, 11, C_SUB)
 	_sub.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	col.add_child(_sub)
+
+	_unlock = Label.new()
+	UiFont.apply(_unlock, 12, C_UNLOCK)
+	_unlock.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	_unlock.visible = false
+	_unlock.custom_minimum_size = Vector2(0.0, UNLOCK_LINE_H)
+	col.add_child(_unlock)
 
 	col.add_child(_spacer(8))
 

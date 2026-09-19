@@ -926,6 +926,109 @@ static func run_char() -> void:
 	print("")
 
 
+## 角色解锁 + 难度自检。运行：godot --headless --path . -- --savetest
+## 全程写临时存档（SaveData.test_path），不碰玩家的真档，跑完删掉。
+static func run_save() -> void:
+	print("")
+	print("=== 角色解锁 · 难度 · 存档 ===")
+	print("存档写到临时文件，跑完删除 —— 玩家的真档不会被测试冲掉")
+	print("")
+	SaveData.test_path = "user://_save_test.cfg"
+	SaveData.loaded = false
+	SaveData.reset_all()
+	_t_save_chain()
+	_t_save_persist()
+	_t_save_diff()
+	_t_save_hp()
+	# 收尾：删掉临时档，并把状态还原成"读真档"（免得后面的流程用脏数据）
+	DirAccess.remove_absolute(ProjectSettings.globalize_path(SaveData.test_path))
+	SaveData.test_path = ""
+	SaveData.loaded = false
+	print("")
+
+
+## 1 解锁链：第 n 个通关 → 开第 n+1 个；最后一个通关不再新增
+static func _t_save_chain() -> void:
+	SaveData.loaded = false
+	SaveData.reset_all()
+	var chain_ok := true
+	var names: Array[String] = []
+	names.append("（初始：只有实习生）")
+	var first_ok: bool = (SaveData.unlocked_count() == 1
+		and SaveData.is_unlocked("intern") and not SaveData.is_unlocked("qa"))
+	for i in CharDefs.CHARACTERS.size() - 1:
+		var cid := str(CharDefs.CHARACTERS[i]["id"])
+		var got := SaveData.mark_cleared(cid)
+		var want := str(CharDefs.CHARACTERS[i + 1]["name"])
+		if got != want or SaveData.unlocked_count() != i + 2:
+			chain_ok = false
+		names.append(got)
+	# 最后一个通关：没有下一个可开
+	var last := SaveData.mark_cleared(str(CharDefs.CHARACTERS[-1]["id"]))
+	var last_ok: bool = (last == "" and SaveData.unlocked_count() == CharDefs.CHARACTERS.size())
+	print("  1 解锁链 · %s" % " → ".join(PackedStringArray(names)))
+	print("            初始只开实习生=%s · 最后一个通关无新增=%s · %s" % [
+		"是" if first_ok else "否", "是" if last_ok else "否",
+		_ok(first_ok and chain_ok and last_ok)])
+
+
+## 2 持久化：写盘后从盘上重读，解锁数必须一致（真的落到文件里，不是只在内存）
+static func _t_save_persist() -> void:
+	SaveData.loaded = false
+	SaveData.reset_all()
+	SaveData.mark_cleared("intern")
+	var before := SaveData.unlocked_count()
+	SaveData.load_game()          # 重新从盘上读
+	var after := SaveData.unlocked_count()
+	var cleared_ok := SaveData.has_cleared("intern")
+	SaveData.reset_all()
+	SaveData.load_game()
+	var reset_ok: bool = SaveData.unlocked_count() == 1
+	print("  2 持久化 · 通关实习生后 %d → 重读存档 %d · 清档回到 %d · %s" % [
+		before, after, SaveData.unlocked_count(),
+		_ok(before == 2 and after == 2 and cleared_ok and reset_ok)])
+
+
+## 3 难度系数：0.8 / 0.9 / 1.0 / 1.1 / 1.2（只影响敌人血量）
+static func _t_save_diff() -> void:
+	var want := [0.8, 0.9, 1.0, 1.1, 1.2]
+	var got: Array[float] = []
+	for c in CharDefs.CHARACTERS:
+		got.append(CharDefs.diff_of(str(c["id"])))
+	var ok := true
+	for i in want.size():
+		if i >= got.size() or absf(got[i] - want[i]) > 0.0001:
+			ok = false
+	print("  3 难度系数 · %s · %s" % [
+		" → ".join(PackedStringArray(got.map(func(v: float) -> String: return "×%.1f" % v))),
+		_ok(ok)])
+
+
+## 4 难度真的作用在血量上：同一时刻、同一类型，血量 = 基础 × 成长 × 难度
+##   （速度不乘难度 —— 只改血量是刻意的，见 char_defs 的注释）
+static func _t_save_hp() -> void:
+	var t := 120.0
+	var base := 22.0     # 垃圾文件
+	var grow: float = 1.0 + t * GameConfig.ENEMY_HP_GROWTH
+	var ti := EnemyDB.idx_of("junk_file")
+	var hps: Array[float] = []
+	var ok := true
+	for c in CharDefs.CHARACTERS:
+		var sim := Sim.new()
+		sim.setup(str(c["id"]))
+		sim.spawn_enabled = false
+		sim.enemies.clear()
+		# 固定半径/距离，速度还有 ±15% 随机，所以速度只比较"量级"
+		sim.spawn._spawn_one(sim, t, 200.0, 200.0, ti, true)
+		hps.append(sim.enemies.hp[0])
+		var want_hp: float = base * grow * CharDefs.diff_of(str(c["id"]))
+		if absf(sim.enemies.hp[0] - want_hp) > 0.01:
+			ok = false
+	print("  4 难度改血量 · 2 分钟垃圾文件 hp：%s" %
+		" / ".join(PackedStringArray(hps.map(func(v: float) -> String: return "%.1f" % v))))
+	print("            期望 = 22 × %.2f × 难度 · %s" % [grow, _ok(ok)])
+
+
 static func _ok(b: bool) -> String:
 	return "OK" if b else "FAIL"
 

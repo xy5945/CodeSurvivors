@@ -48,9 +48,21 @@ var _was_victory := false
 var _was_boss := false
 # 一局结束（死亡/通关）到弹结算之间的倒计时；<0 表示还没结束
 var _end_delay := -1.0
+# 通关解锁：一局只记一次（_update_end 每帧都会被调，不能重复记账）
+var _unlock_recorded := false
+var _unlock_msg := ""
+# 带命令行参数启动的都是测试/截图，不该把解锁进度写进玩家真档
+# （--resulttest 会造一个假的通关，不拦住它就会白白解锁一个角色）
+var _no_save := false
 
 
 func _ready() -> void:
+	# 读存档：解锁到第几个角色。必须在最前面 —— 选人界面和结算都依赖它，
+	# 而它是 static 的，重载场景（重开 / 退出回标题）不会自己重置。
+	SaveData.load_game()
+	# 只要带了参数就是测试/截图流程，解锁一律不落盘
+	_no_save = not OS.get_cmdline_user_args().is_empty()
+
 	if OS.get_cmdline_user_args().has("--bench"):
 		set_process(false)      # quit() 不会立刻生效，否则 _process 会跑几帧空指针
 		Bench.run()
@@ -224,7 +236,29 @@ func _ready() -> void:
 					knowledge.push(id)
 			knowledge.push("gem")
 			knowledge.push("whip")
-			result.open(sim, knowledge.unlocked_count(), KnowledgeDB.total())
+			result.open(sim, knowledge.unlocked_count(), KnowledgeDB.total(),
+				"测试工程师" if win else "")
+			await RenderingServer.frame_post_draw
+			await RenderingServer.frame_post_draw
+			_save_shot()
+			get_tree().quit()
+			return
+
+	# --charshot[=解锁数]：选人界面截图。默认解锁 1 个，=3 就能看到
+	# 2 张锁着的卡片（灰底 + 未解锁 + 解锁条件）长什么样
+	for a in OS.get_cmdline_user_args():
+		if a.begins_with("--charshot"):
+			_set_gameplay_ui(false)
+			var n := int(a.split("=")[-1]) if "=" in a else 1
+			n = clampi(n, 1, CharDefs.CHARACTERS.size())
+			SaveData.loaded = false
+			SaveData.test_path = "user://_shot_save.cfg"
+			SaveData.reset_all()
+			for i in n - 1:
+				SaveData.mark_cleared(str(CharDefs.CHARACTERS[i]["id"]))
+			char_select.open()
+			SaveData.test_path = ""
+			SaveData.loaded = false
 			await RenderingServer.frame_post_draw
 			await RenderingServer.frame_post_draw
 			_save_shot()
@@ -305,6 +339,27 @@ func _ready() -> void:
 	if OS.get_cmdline_user_args().has("--wpn6test"):
 		set_process(false)
 		Bench.run_wpn6()
+		get_tree().quit()
+		return
+
+	# --savetest：角色解锁链 + 难度系数自检（用临时存档，不碰玩家真档）
+	if OS.get_cmdline_user_args().has("--savetest"):
+		set_process(false)
+		Bench.run_save()
+		get_tree().quit()
+		return
+
+	# --unlockall / --resetunlock：开发用。想直接看后面的角色时不用重打一遍。
+	if OS.get_cmdline_user_args().has("--unlockall"):
+		SaveData.load_game()
+		SaveData.unlock_all()
+		print("[SaveData] 已全解锁 %d/%d 个角色" % [SaveData.unlocked_count(), CharDefs.CHARACTERS.size()])
+		get_tree().quit()
+		return
+	if OS.get_cmdline_user_args().has("--resetunlock"):
+		SaveData.load_game()
+		SaveData.reset_all()
+		print("[SaveData] 已清档，回到只解锁第 1 个角色")
 		get_tree().quit()
 		return
 
@@ -792,7 +847,12 @@ func _update_end(delta: float) -> void:
 		return
 	_end_delay -= delta
 	if _end_delay <= 0.0:
-		result.open(sim, knowledge.unlocked_count(), KnowledgeDB.total())
+		# 通关才记账：用第 n 个角色赢了，才开第 n+1 个。
+		# 记在开面板之前 —— 面板上要直接写"解锁了谁"。
+		if sim.victory and not _unlock_recorded and not _no_save:
+			_unlock_recorded = true
+			_unlock_msg = SaveData.mark_cleared(sim.char_id)
+		result.open(sim, knowledge.unlocked_count(), KnowledgeDB.total(), _unlock_msg)
 
 
 ## 重开：直接重载场景。手动 reset 要清七八个对象池 + 空间网格 + 所有渲染器

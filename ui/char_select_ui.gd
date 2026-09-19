@@ -13,6 +13,10 @@ extends CanvasLayer
 ## 下方的详情条再展开这个编程概念的中文解释。
 ## 全塞进 118px 宽的卡片里会挤成一团，等于没写。
 ##
+## 解锁：一开始只有第 1 个角色可用，后面每个都要**用前一个角色通关**才开
+## （见 core/save_data.gd）。锁着的卡片照样摆出来 —— 玩家得看得见"下一个是
+## 谁、怎么得到"，才有动力去打。锁着的点了不给进，详情条上直接写条件。
+##
 
 signal selected(char_id: String)
 signal back_requested
@@ -28,6 +32,11 @@ const BORDER_SEL := Color(1.0, 0.86, 0.36, 1.0)
 const C_NAME := Color(0.96, 0.98, 1.0, 1.0)
 const C_DIM := Color(0.64, 0.70, 0.82, 1.0)
 const C_TRAIT := Color(1.0, 0.86, 0.40, 1.0)
+# 锁着的卡片：整张压暗，边框换成灰蓝，和"可点"的一眼分得开
+const BG_LOCK := Color(0.05, 0.06, 0.09, 0.97)
+const BORDER_LOCK := Color(0.18, 0.20, 0.26, 1.0)
+const C_LOCK := Color(0.62, 0.66, 0.74, 1.0)
+const C_LOCK_TIP := Color(0.90, 0.70, 0.72, 1.0)
 
 # 记住上一次的选择：换角色重开时默认停在上一个角色上，不用重新找
 static var last_id := CharDefs.DEFAULT_ID
@@ -35,6 +44,7 @@ static var last_id := CharDefs.DEFAULT_ID
 var _panels: Array[Panel] = []
 var _detail: Label
 var _attr: Label
+var _sub: Label
 var _sel := 0
 var _is_open := false
 
@@ -54,11 +64,29 @@ func open(last := "") -> void:
 	if last != "":
 		last_id = last
 	_sel = _index_of(last_id)
+	# 存档里没解锁的角色不能当默认项（清档后 last_id 可能还停在架构师上）
+	if not _is_unlocked(_sel):
+		_sel = 0
+	# 卡片内容是 _ready 时按当时的解锁状态画的；一局打完解锁了新角色，
+	# 回标题再进选人必须重画，否则新角色还是灰的。
+	_rebuild_cards()
 	_refresh()
 	show()
 	_is_open = true
 	Input.set_mouse_mode(Input.MOUSE_MODE_VISIBLE)
 	get_tree().paused = true
+
+
+## 清空卡片内容重画。解锁状态在两次打开之间可能已经变了（打完一局通关）。
+func _rebuild_cards() -> void:
+	for i in _panels.size():
+		for c in _panels[i].get_children():
+			c.free()
+		_fill_card(_panels[i], CharDefs.CHARACTERS[i], i)
+
+
+func _is_unlocked(i: int) -> bool:
+	return SaveData.is_unlocked(str(CharDefs.CHARACTERS[i]["id"]))
 
 
 func _index_of(id: String) -> int:
@@ -86,7 +114,8 @@ func _build() -> void:
 	title.size = Vector2(640.0, 28.0)
 	root.add_child(title)
 
-	var sub := Label.new()
+	_sub = Label.new()
+	var sub := _sub
 	sub.text = "鼠标点击卡片 · 数字键 1~5 快速选择 · Enter 开始 · ESC 返回"
 	UiFont.apply(sub, 10, C_DIM)
 	sub.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
@@ -104,7 +133,7 @@ func _build() -> void:
 		p.mouse_filter = Control.MOUSE_FILTER_STOP
 		root.add_child(p)
 		_panels.append(p)
-		_fill_card(p, CharDefs.CHARACTERS[i])
+		_fill_card(p, CharDefs.CHARACTERS[i], i)
 		var idx := i
 		p.mouse_entered.connect(func() -> void: _set_sel(idx))
 		p.gui_input.connect(func(ev: InputEvent) -> void:
@@ -133,7 +162,11 @@ func _build() -> void:
 	root.add_child(back)
 
 
-func _fill_card(p: Panel, d: Dictionary) -> void:
+func _fill_card(p: Panel, d: Dictionary, idx: int) -> void:
+	var locked := not _is_unlocked(idx)
+	var name_col := C_DIM if locked else C_NAME
+	var code_col: Color = C_LOCK if locked else d["color"]
+	var trait_col := C_LOCK if locked else C_TRAIT
 	var v := VBoxContainer.new()
 	v.set_anchors_preset(Control.PRESET_FULL_RECT)
 	v.add_theme_constant_override("separation", 3)
@@ -154,13 +187,13 @@ func _fill_card(p: Panel, d: Dictionary) -> void:
 
 	var code := Label.new()
 	code.text = str(d["code"])
-	UiFont.apply(code, 15, d["color"])
+	UiFont.apply(code, 15, code_col)
 	code.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	col.add_child(code)
 
 	var nm := Label.new()
 	nm.text = str(d["name"])
-	UiFont.apply(nm, 13, C_NAME)
+	UiFont.apply(nm, 13, name_col)
 	nm.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	col.add_child(nm)
 
@@ -190,14 +223,15 @@ func _fill_card(p: Panel, d: Dictionary) -> void:
 	col.add_child(sp2)
 
 	var tn := Label.new()
-	tn.text = str(d["trait_name"])
-	UiFont.apply(tn, 11, C_TRAIT)
+	# 锁着的角色不剧透特性：先给解锁条件，拿到了再看它好在哪
+	tn.text = "未解锁" if locked else str(d["trait_name"])
+	UiFont.apply(tn, 11, trait_col)
 	tn.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	col.add_child(tn)
 
 	var td := Label.new()
-	td.text = str(d["trait_desc"])
-	UiFont.apply(td, 9, C_DIM)
+	td.text = SaveData.unlock_hint(str(d["id"])) if locked else str(d["trait_desc"])
+	UiFont.apply(td, 9, C_LOCK_TIP if locked else C_DIM)
 	td.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	td.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	td.custom_minimum_size = Vector2(0.0, 50.0)
@@ -214,15 +248,22 @@ func _set_sel(i: int) -> void:
 func _refresh() -> void:
 	for i in _panels.size():
 		var sb := StyleBoxFlat.new()
-		sb.bg_color = BG
-		sb.border_color = BORDER_SEL if i == _sel else BORDER
+		var lock := not _is_unlocked(i)
+		sb.bg_color = BG_LOCK if lock else BG
+		sb.border_color = BORDER_SEL if i == _sel else (BORDER_LOCK if lock else BORDER)
 		sb.set_border_width_all(2)
 		sb.set_corner_radius_all(4)
 		_panels[i].add_theme_stylebox_override("panel", sb)
 
 	var d: Dictionary = CharDefs.CHARACTERS[_sel]
-	_detail.text = "「%s」%s —— %s" % [d["term"], d["code"], d["plain"]]
-	_attr.text = _attr_text(d)
+	if _is_unlocked(_sel):
+		_detail.text = "「%s」%s —— %s" % [d["term"], d["code"], d["plain"]]
+		_attr.text = _attr_text(d)
+	else:
+		_detail.text = "「%s」还没解锁 —— %s" % [d["name"], SaveData.unlock_hint(str(d["id"]))]
+		_attr.text = "难度 ×%s（敌人血量）" % _fmt_diff(float(d["diff"]))
+	_sub.text = "已解锁 %d / %d　·　鼠标点击卡片 · 数字键 1~%d 选择 · Enter 开始 · ESC 返回" % [
+		SaveData.unlocked_count(), CharDefs.CHARACTERS.size(), CharDefs.CHARACTERS.size()]
 
 
 ## 只列和基准不一样的项。全列一遍的话 5 个角色看起来都差不多，
@@ -244,12 +285,21 @@ func _attr_text(d: Dictionary) -> String:
 	return "属性  " + "  ".join(PackedStringArray(parts))
 
 
+func _fmt_diff(v: float) -> String:
+	return ("%.1f" % v)
+
+
 func _fmt(v: float) -> String:
 	return ("%.2f" % v).trim_suffix("0").trim_suffix("0")
 
 
 func _confirm() -> void:
 	if not _is_open:
+		return
+	if not _is_unlocked(_sel):
+		# 不给进，但要把"怎么解锁"再明确一次 —— 点了没反应是最糟的反馈
+		var d: Dictionary = CharDefs.CHARACTERS[_sel]
+		_detail.text = "「%s」还没解锁 —— %s" % [d["name"], SaveData.unlock_hint(str(d["id"]))]
 		return
 	last_id = str(CharDefs.CHARACTERS[_sel]["id"])
 	_is_open = false

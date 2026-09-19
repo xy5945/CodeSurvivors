@@ -90,10 +90,11 @@ func _spawn_one(sim, t: float, d_min: float = GameConfig.SPAWN_MIN_DIST,
 	var dist: float = d_min + randf() * (d_max - d_min)
 	var x: float = sim.player_x + cos(ang) * dist
 	var y: float = sim.player_y + sin(ang) * dist
+	# 速度随机化跟难度无关：难度只改血量，改速度会让"这局难在哪"变得说不清。
 	var spd: float = d.speed * (0.85 + randf() * 0.3)
-	# 血量随存活时长成长（原 ENEMY_HP_GROWTH 曲线对每个类型同样生效）。
-	# Boss 例外：fixed_hp > 0 时用固定值。
-	var hp: float = fixed_hp if fixed_hp > 0.0 else d.hp * (1.0 + t * GameConfig.ENEMY_HP_GROWTH)
+	# 普通怪：基础血量 × 时间成长 × 角色难度（0.8~1.2）。
+	# Boss：血量固定、不吃时间成长（它是设计好的一场决战），但难度照样要乘。
+	var hp: float = (fixed_hp * sim.difficulty) if fixed_hp > 0.0 else sim.enemy_hp(d.hp, t)
 
 	if e.spawn(x, y, hp, spd, d.radius, type_i):
 		sim._note_enemy_type(type_i)

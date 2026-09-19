@@ -32,6 +32,10 @@ var char_id := CharDefs.DEFAULT_ID
 var char_def: Dictionary
 var char_trait := CharDefs.T_LEARN
 var char_hp_mult := 1.0       # 角色属性修正（乘算，见 char_defs）
+# 角色难度：**只作用于敌人血量**（0.8 简单 → 1.2 困难，见 char_defs.diff）。
+# 不动敌人速度/伤害/数量 —— 那几样一动，"这一局难在哪"就说不清了，
+# 玩家也没法判断是自己变强了还是敌人变弱了。
+var difficulty := 1.0
 var char_speed_mult := 1.0
 var iframe_mult := 1.0        # 测试工程师：受击后的无敌时间倍率
 var _cron_timer := 0.0        # 全栈工程师：兜底回血计时
@@ -134,6 +138,7 @@ func setup(cid := CharDefs.DEFAULT_ID) -> void:
 	iframe_mult = CharDefs.BREAK_IFRAME_MULT if char_trait == CharDefs.T_BREAK else 1.0
 
 	char_hp_mult = float(char_def["hp_mult"])
+	difficulty = CharDefs.diff_of(char_id)
 	char_speed_mult = float(char_def["speed_mult"])
 	loadout.char_dmg_mult = float(char_def["dmg_mult"])
 	loadout.char_cd_mult = float(char_def["cd_mult"])
@@ -652,7 +657,6 @@ func _boss_summon_tick(dt: float, boss_idx: int, boss_type: int) -> void:
 	if ji < 0:
 		return
 	var t := time
-	var growth := 1.0 + t * GameConfig.ENEMY_HP_GROWTH
 	var n := 0
 	for k in GameConfig.BOSS_SUMMON_N:
 		if enemies.count >= enemies.capacity():
@@ -663,7 +667,7 @@ func _boss_summon_tick(dt: float, boss_idx: int, boss_type: int) -> void:
 		if enemies.spawn(
 				enemies.px[boss_idx] + cos(ang) * dist,
 				enemies.py[boss_idx] + sin(ang) * dist,
-				d.hp * growth, d.speed, d.radius, ji):
+				enemy_hp(d.hp, t), d.speed, d.radius, ji):
 			n += 1
 	boss_summons += 1
 	_note_enemy_type(ji)
@@ -728,16 +732,22 @@ func _reap() -> void:
 ## 为什么要有这个：精英的血量提高之后（150 → 350），玩家很自然会
 ## "贴上去磨死它"。一个会分裂的精英改变了这个决定 —— 磨它的时间越长，
 ## 分裂的怪越快把你围住。它把"打精英"从纯 DPS 检查变成"什么时候去收"的取舍。
+## 敌人血量的唯一算法：基础 × 时间成长 × 角色难度。
+## 刷怪、Boss 召唤、精英分裂全都走它 —— 分散写的话难度系数迟早漏一处，
+## 表现为"某个角色打着打着突然变简单"，而且极难复现。
+func enemy_hp(base: float, t: float = -1.0) -> float:
+	return base * (1.0 + (time if t < 0.0 else t) * GameConfig.ENEMY_HP_GROWTH) * difficulty
+
+
 func _split_elite(x: float, y: float) -> void:
 	var bi := EnemyDB.BASIC_IDX
 	var d: Dictionary = EnemyDB.DEFS[bi]
-	var growth := 1.0 + time * GameConfig.ENEMY_HP_GROWTH
 	for k in GameConfig.ELITE_SPLIT_N:
 		if enemies.count >= enemies.capacity():
 			break
 		var ang := TAU * float(k) / float(GameConfig.ELITE_SPLIT_N) + randf()
 		enemies.spawn(x + cos(ang) * 16.0, y + sin(ang) * 16.0,
-			d.hp * growth, d.speed, d.radius, bi)
+			enemy_hp(d.hp), d.speed, d.radius, bi)
 	elite_splits += 1
 	_note_enemy_type(bi)
 

@@ -28,6 +28,12 @@ const CRON_INTERVAL := 25.0      # 定时任务的间隔（秒）
 const CRON_HEAL_FRAC := 0.06     # 每次回最大生命的百分比
 const BREAK_IFRAME_MULT := 2.0   # 无敌帧倍率
 
+## ---- 难度 ----
+## 每个角色一个难度系数，**目前只作用于敌人血量**：
+##   实习生 0.8 → 测试 0.9 → 算法 1.0（基准）→ 全栈 1.1 → 架构师 1.2
+## 越靠后的角色越强，敌人也就越硬 —— 解锁顺序和难度顺序是同一条线，
+## 玩家每往前走一步，既拿到更强的角色，也接住更硬的一局。
+## 只改血量不动速度/伤害：那两样一动，"这局难在哪"就说不清了。
 const DEFAULT_ID := "intern"
 
 const CHARACTERS: Array = [
@@ -40,6 +46,7 @@ const CHARACTERS: Array = [
 		"trait_desc": "每 10 级额外获得 1 次升级选择",
 		"hp_mult": 1.0, "speed_mult": 1.0, "dmg_mult": 1.0,
 		"cd_mult": 1.0, "pickup_mult": 1.0,
+		"diff": 0.8,
 		"color": Color(0.62, 0.86, 1.0),
 	},
 	{
@@ -51,6 +58,7 @@ const CHARACTERS: Array = [
 		"trait_desc": "受伤后的无敌时间翻倍，可以从容脱离",
 		"hp_mult": 1.05, "speed_mult": 1.08, "dmg_mult": 1.0,
 		"cd_mult": 0.94, "pickup_mult": 1.0,
+		"diff": 0.9,
 		"color": Color(0.72, 0.72, 1.0),
 	},
 	{
@@ -62,6 +70,7 @@ const CHARACTERS: Array = [
 		"trait_desc": "每消灭 60 个 Bug，全部武器立刻冷却完毕",
 		"hp_mult": 0.95, "speed_mult": 1.0, "dmg_mult": 1.08,
 		"cd_mult": 1.0, "pickup_mult": 1.0,
+		"diff": 1.0,
 		"color": Color(0.72, 1.0, 0.72),
 	},
 	{
@@ -73,6 +82,7 @@ const CHARACTERS: Array = [
 		"trait_desc": "每 25 秒自动回复 6% 生命上限",
 		"hp_mult": 1.25, "speed_mult": 0.94, "dmg_mult": 0.95,
 		"cd_mult": 1.0, "pickup_mult": 1.0,
+		"diff": 1.1,
 		"color": Color(1.0, 0.62, 0.72),
 	},
 	{
@@ -84,6 +94,7 @@ const CHARACTERS: Array = [
 		"trait_desc": "每持有一把武器，伤害 +5%",
 		"hp_mult": 1.0, "speed_mult": 0.96, "dmg_mult": 1.0,
 		"cd_mult": 1.0, "pickup_mult": 1.4,
+		"diff": 1.2,
 		"color": Color(1.0, 0.85, 0.55),
 	},
 ]
@@ -104,3 +115,23 @@ static func is_valid(id: String) -> bool:
 static func trait_of(id: String) -> int:
 	var d := def_of(id)
 	return int(d["trait"]) if not d.is_empty() else T_LEARN
+
+
+## 角色在表里的下标（-1 = 不存在）。解锁链靠下标推进：第 n 个通关 → 开第 n+1 个。
+static func index_of(id: String) -> int:
+	for i in CHARACTERS.size():
+		if str(CHARACTERS[i]["id"]) == id:
+			return i
+	return -1
+
+
+static func def_at(i: int) -> Dictionary:
+	if i < 0 or i >= CHARACTERS.size():
+		return {}
+	return CHARACTERS[i]
+
+
+## 难度系数：敌人血量倍率。
+static func diff_of(id: String) -> float:
+	var d := def_of(id)
+	return float(d["diff"]) if not d.is_empty() else 1.0
