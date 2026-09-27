@@ -2484,6 +2484,42 @@ static func run_code_test() -> void:
 					print("    不符 %s Lv%d #%d：%d 行 / %d 字符" % [th, lv, vi, arr.size(), txt.length()])
 	_tally(c, grad_bad == 0, "梯度 前3级=关键字·4-5级<=2行·6-7级<=4行·满级=完整小题（不符 %d 道）" % grad_bad)
 
+	# 必会关键字覆盖：用户要求前 3 级铺开 C++ 最常用的那批关键字，
+	# 不能只围着 int / cout 转。改题库删掉任何一个都会被这条拦下来。
+	var must := ["if", "else", "switch", "for", "while", "do", "break", "continue",
+		"cout", "endl", "printf", "scanf", "cin", "int", "double", "char", "bool",
+		"string", "void", "long", "new", "delete", "nullptr", "sizeof", "const",
+		"return", "#include", "rand", "%"]
+	var pool := {}
+	for th in themes:
+		for lv in range(1, 4):
+			for vi in CodeChallengeDB.variants(th, lv):
+				for ln in CodeChallengeDB.frag(th, lv, vi):
+					pool[str(ln).strip_edges()] = true
+	var miss := []
+	for k in must:
+		if not pool.has(k):
+			miss.append(k)
+	_tally(c, miss.is_empty(),
+		"必会关键字 %d 个全部出现在前3级（缺 %s）" % [must.size(),
+			"无" if miss.is_empty() else ", ".join(PackedStringArray(miss))])
+
+	# 关键字不能扎堆：任何一个关键字最多占 3 个格子（曾经 int 独占 9 个）
+	var kw_count := {}
+	for th in themes:
+		for lv in range(1, 4):
+			for vi in CodeChallengeDB.variants(th, lv):
+				for ln in CodeChallengeDB.frag(th, lv, vi):
+					var kk := str(ln).strip_edges()
+					kw_count[kk] = int(kw_count.get(kk, 0)) + 1
+	var hot := 0
+	var hot_k := ""
+	for kk in kw_count:
+		if int(kw_count[kk]) > hot:
+			hot = int(kw_count[kk])
+			hot_k = kk
+	_tally(c, hot <= 3, "关键字不扎堆（出现最多的是 %s x%d）" % [hot_k, hot])
+
 	# A2 随机抽变体
 	CodeChallenge.set_seed(20260927)
 	var picks := {}

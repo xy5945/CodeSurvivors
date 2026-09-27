@@ -367,8 +367,13 @@ func _ready() -> void:
 
 	for a in OS.get_cmdline_user_args():
 		if a.begins_with("--codeshot"):
+			# 写法：--codeshot（默认 orbit 5 级） / --codeshot=<升级id> / --codeshot=<升级id>:<等级>
 			var cid := a.split("=")[-1] if "=" in a else "orbit"
-			code_input.open("循环护盾　Lv 4 → 5", cid, 5, false, CodeChallenge.Mode.STD)
+			var lv := 5
+			if ":" in cid:
+				lv = int(cid.split(":")[1])
+				cid = cid.split(":")[0]
+			code_input.open("代码挑战　Lv %d" % lv, cid, lv, false, CodeChallenge.Mode.STD)
 			await RenderingServer.frame_post_draw
 			await RenderingServer.frame_post_draw
 			_save_shot()
