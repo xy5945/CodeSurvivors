@@ -10,6 +10,7 @@
   3. 缩进统一 4 空格。缩进是 C++ 的教学点，但校验时会宽容（见 CodeChallenge.normalize）。
 """
 import io
+import os
 
 # 主题 -> {等级: (代码行列表, 一句话讲解)}
 DB = {
