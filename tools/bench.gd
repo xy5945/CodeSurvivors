@@ -2520,6 +2520,49 @@ static func run_code_test() -> void:
 			hot_k = kk
 	_tally(c, hot <= 3, "关键字不扎堆（出现最多的是 %s x%d）" % [hot_k, hot])
 
+	# 前 3 级统一走关键字池：不看主题，随机抽（用户定的规则）
+	var nkw := CodeChallengeDB.keyword_count()
+	var kw_seen := {}
+	var kw_dup := 0
+	for i in nkw:
+		var k := CodeChallengeDB.keyword_code(i)
+		if kw_seen.has(k):
+			kw_dup += 1
+		kw_seen[k] = true
+	_tally(c, nkw >= 30 and kw_dup == 0,
+		"关键字池 %d 条且互不重复（重复 %d）" % [nkw, kw_dup])
+
+	CodeChallenge.set_seed(20260927)
+	var kw_pool_txt := {}
+	for i in nkw:
+		kw_pool_txt[CodeChallengeDB.keyword_code(i)] = true
+	var kw_hit := 0
+	var kw_kinds := {}
+	for i in 40:
+		var t1 := str(CodeChallenge.build("whip", 1, false, CodeChallenge.Mode.STD)["text"])
+		var t2 := str(CodeChallenge.build("pointer", 2, false, CodeChallenge.Mode.STD)["text"])
+		if kw_pool_txt.has(t1) and kw_pool_txt.has(t2):
+			kw_hit += 1
+		kw_kinds[t1] = true
+	_tally(c, kw_hit == 40,
+		"前3级出题全部来自关键字池（40 次抽样命中 %d，与主题无关）" % kw_hit)
+	_tally(c, kw_kinds.size() >= 10,
+		"前3级随机抽：40 次抽到 %d 种不同关键字" % kw_kinds.size())
+	_tally(c, int(CodeChallenge.build("whip", 1, false,
+		CodeChallenge.Mode.STD)["level"]) == 1, "关键字题的 level 仍是升级到的等级")
+
+	# 救我一命：随机主题的满级小题
+	CodeChallenge.set_seed(99)
+	var r1 := CodeChallenge.build_rescue(CodeChallenge.Mode.STD)
+	var rlines := r1["lines"] as Array
+	_tally(c, int(r1["level"]) == 8 and rlines.size() >= 5,
+		"救命题是满级小题（Lv%d · %d 行）" % [int(r1["level"]), rlines.size()])
+	var r_kinds := {}
+	for i in 20:
+		r_kinds[str(CodeChallenge.build_rescue(CodeChallenge.Mode.STD)["text"])] = true
+	_tally(c, r_kinds.size() >= 5, "救命题随机抽题（20 次抽到 %d 种）" % r_kinds.size())
+	CodeChallenge.randomize_seed()
+
 	# A2 随机抽变体
 	CodeChallenge.set_seed(20260927)
 	var picks := {}

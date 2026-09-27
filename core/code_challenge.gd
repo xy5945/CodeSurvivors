@@ -58,12 +58,23 @@ static func _pick(n: int) -> int:
 
 # ---------------------------------------------------------------- 出题
 
+## 上一次抽到的关键字下标。连续两次抽到同一个，孩子会觉得"又来了"。
+static var _last_kw := -1
+
+
 ## 生成一道题。is_evo（进化）走最难的满级题。
 ## variant 传 -1（默认）表示在这级的变体里随机抽一道 —— 同一个升级项反复升满级
 ## 不会永远打同一段代码；传具体下标则由调用方指定（测试用）。
+##
+## Lv1-3 不看主题：用户要求「无论升级什么技能都从关键字池随机抽」，
+## 所以这一档统一走 CodeChallengeDB.KW，而不是 frag(theme, lv)。
 static func build(upgrade_id: String, target_level: int, is_evo: bool, mode: int, variant: int = -1) -> Dictionary:
 	var theme := CodeChallengeDB.theme_of(upgrade_id)
 	var lv: int = 8 if is_evo else clampi(target_level, 1, 8)
+
+	if lv <= 3:
+		return _build_keyword(lv, mode, variant)
+
 	var vi := variant
 	if vi < 0:
 		vi = _pick(CodeChallengeDB.variants(theme, lv))
@@ -83,6 +94,36 @@ static func build(upgrade_id: String, target_level: int, is_evo: bool, mode: int
 		"text": "\n".join(PackedStringArray(lines)),
 		"tip": CodeChallengeDB.tip(theme, lv, vi),
 	}
+
+
+## 前 3 级：从关键字池随机抽一条。variant >= 0 时钉住下标（测试用）。
+static func _build_keyword(lv: int, mode: int, variant: int) -> Dictionary:
+	var n := CodeChallengeDB.keyword_count()
+	var ki := variant
+	if ki < 0:
+		ki = _pick(n)
+		if n > 1 and ki == _last_kw:
+			ki = (ki + 1) % n
+	_last_kw = ki
+	var code := CodeChallengeDB.keyword_code(ki)
+	return {
+		"theme": "keyword",
+		"level": lv,
+		"variant": ki,
+		"lines": [code],
+		"text": code,
+		"tip": CodeChallengeDB.keyword_tip(ki),
+	}
+
+
+## 「救我一命」专用：随机主题 + 随机变体的一道满级小题。
+## 不给提示、不看玩家 build —— 救命就是要用最难的题换。
+static func build_rescue(mode: int, variant: int = -1) -> Dictionary:
+	var themes := CodeChallengeDB.themes()
+	if themes.is_empty():
+		return build("general", 8, false, mode, variant)
+	var th := str(themes[_pick(themes.size())])
+	return build(th, 8, false, mode, variant)
 
 
 ## 轻松档：取最长的一行（核心语句）。纯括号行和空行不算。

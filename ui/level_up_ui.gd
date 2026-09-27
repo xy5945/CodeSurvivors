@@ -27,6 +27,10 @@ var code_input: CodeInputUI = null
 ## 难度档位（CodeChallenge.Mode）。OFF 时点卡直接生效。
 var code_mode: int = CodeChallenge.Mode.STD
 var _pending_id := ""
+## 打码面板是不是本弹窗打开的那一轮。见 main._on_code_solved：
+## 面板是共用的（救援也借它出题），没有这把锁，救援做对了会把上一次的
+## 升级项再应用一遍。
+var _awaiting_code := false
 
 var _panel: Control          # 选卡那一套（遮罩 + 卡片）
 var _ready_layer: Control    # 收尾那 1 秒的「准备」提示
@@ -227,6 +231,7 @@ func _on_card_picked(card: UpgradeCard) -> void:
 		"新获得" if card.target_level == 1 else "Lv %d → %d" % [card.target_level - 1, card.target_level])
 	_pending_id = id
 	_need_ready = true
+	_awaiting_code = true
 	# 先把自己收起来：打码面板在自己的 CanvasLayer 上，层更高，
 	# 但遮罩是半透明的，不 hide 的话卡片会透上来盖住输入框
 	hide()
@@ -235,6 +240,9 @@ func _on_card_picked(card: UpgradeCard) -> void:
 
 
 func _on_code_solved() -> void:
+	if not _awaiting_code:
+		return
+	_awaiting_code = false
 	_apply(_pending_id, true)
 
 

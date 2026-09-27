@@ -138,6 +138,24 @@ func open(title_text: String, upgrade_id: String, target_level: int, is_evo: boo
 	_update()
 
 
+## 「救我一命」专用入口：随机主题的一道满级小题。
+## 和升级题的区别只有两点 —— 题目来源（build_rescue）和光标
+## （点完按钮就是纯打字，不需要鼠标）。
+func open_rescue(title_text: String, m: int) -> void:
+	mode = m
+	var ch := CodeChallenge.build_rescue(m)
+	_target = str(ch["text"])
+	_title.text = title_text
+	_tip_l.text = "· " + str(ch["tip"]) + "　（满级小题）"
+	_edit.text = ""
+	_done_t = -1.0
+	show()
+	get_tree().paused = true
+	Input.set_mouse_mode(Input.MOUSE_MODE_HIDDEN)
+	_edit.grab_focus()
+	_update()
+
+
 func _finish() -> void:
 	_done_t = -1.0
 	hide()

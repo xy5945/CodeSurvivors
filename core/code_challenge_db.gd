@@ -351,3 +351,84 @@ static func theme_of(upgrade_id: String) -> String:
 	if THEME_OF.has(upgrade_id):
 		return str(THEME_OF[upgrade_id])
 	return "general"
+
+
+## 全部主题名（「救我一命」随机抽主题用）
+static func themes() -> Array:
+	return FRAG.keys()
+
+
+## 前 3 级的关键字池：[代码, 讲解] 的列表，按代码去重。
+## 用户定的规则：前 3 级不看主题，无论升哪个技能都从这个池里随机抽，
+## 所以 FRAG 里 Lv1-3 的内容只是「池的素材」，出题端走 KW 而不是 frag()。
+const KW := [
+	["if", "分支的开头：条件成立才执行"],
+	["else", "否则就走另一条"],
+	["else if", "前面不成立，再判一个条件"],
+	["switch", "多分支：一个变量对上好几种情况"],
+	["case 1:", "case 就是 switch 里的一种情况"],
+	["for", "循环的开头：重复做同一件事"],
+	["i++", "i 自己加一，等价于 i = i + 1"],
+	["i--", "i 自己减一，循环倒着走"],
+	["continue", "continue：这一轮跳过，直接进下一轮"],
+	["cout", "输出的开头：两个小于号表示流向屏幕"],
+	["printf", "另一种输出写法，来自 C 语言"],
+	["endl", "endl 表示换行"],
+	["rand", "随机数函数：每次结果都可能不同"],
+	["%", "取余：算出除法剩下的余数"],
+	["srand", "srand 播下随机种子，换个种子结果就变"],
+	["int", "函数的返回值类型：整数"],
+	["void", "void 表示这个函数不返回结果"],
+	["return", "return 把结果送回去"],
+	["return 0;", "返回 0 表示正常结束"],
+	["long", "long long 能装下更大的整数"],
+	["int*", "星号表示这是一个指针变量"],
+	["&n", "& 取地址：拿到 n 的门牌号"],
+	["*p", "*p 表示「p 指向的那个值」"],
+	["int a[5];", "定义数组：一口气要五个整数的位置"],
+	["a[0]", "下标从 0 开始，不是 1"],
+	["a[i]", "下标用变量写，就能换着取"],
+	["new", "new：向系统申请一块新空间"],
+	["delete", "delete：用完还回去，不还就是内存泄漏"],
+	["nullptr", "nullptr 表示这个指针现在谁也不指"],
+	["i < 10", "循环条件：不能等于 10，否则越界"],
+	["while", "条件成立就一直做"],
+	["sizeof", "sizeof 算出这块数据占多大，别写超"],
+	["const", "const 定死的值不许改，边界更安全"],
+	["%d", "%d 是占位符：这里要放一个整数"],
+	["do", "do：先做一次，再判断要不要继续"],
+	["break", "break：条件一到就直接跳出循环"],
+	["#include", "井号开头的是预处理命令：把头文件拿进来"],
+	["int main()", "程序从 main 开始执行"],
+	["double", "小数类型"],
+	["cin", "cin 输入：两个大于号表示从键盘流向变量"],
+	["scanf", "scanf 输入：C 语言的写法"],
+	["char", "字符类型：装一个字母"],
+	["bool", "布尔类型：只有 true 和 false"],
+	["string", "string 装一整串文字"],
+]
+
+
+## 关键字池有多少条
+static func keyword_count() -> int:
+	return KW.size()
+
+
+## 取关键字池第 i 条的代码（越界退回第 0 条）
+static func keyword_code(i: int) -> String:
+	if KW.is_empty():
+		return ""
+	var k := i
+	if k < 0 or k >= KW.size():
+		k = 0
+	return str((KW[k] as Array)[0])
+
+
+## 取关键字池第 i 条的讲解
+static func keyword_tip(i: int) -> String:
+	if KW.is_empty():
+		return ""
+	var k := i
+	if k < 0 or k >= KW.size():
+		k = 0
+	return str((KW[k] as Array)[1])

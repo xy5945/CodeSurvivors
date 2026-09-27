@@ -501,6 +501,20 @@ def gd_str(s: str) -> str:
     return '"' + s.replace('\\', '\\\\').replace('"', '\\"') + '"'
 
 
+# 前 3 级的关键字池：把 13 个主题 Lv1-3 的题全部倒进来，按代码去重。
+# 出题端（CodeChallenge.build）在 lv<=3 时直接从这个池随机抽，不看主题。
+kw_pool = []
+_seen = set()
+for theme in DB:
+    for lv in (1, 2, 3):
+        for code, tip in DB[theme][lv]:
+            assert len(code) == 1, "关键字题必须只有一行：%r" % code
+            key = code[0]
+            if key in _seen:
+                continue
+            _seen.add(key)
+            kw_pool.append((key, tip))
+
 lines = []
 lines.append('class_name CodeChallengeDB')
 lines.append('extends RefCounted')
@@ -605,6 +619,45 @@ lines.append('static func theme_of(upgrade_id: String) -> String:')
 lines.append('\tif THEME_OF.has(upgrade_id):')
 lines.append('\t\treturn str(THEME_OF[upgrade_id])')
 lines.append('\treturn "general"')
+lines.append('')
+lines.append('')
+lines.append('## 全部主题名（「救我一命」随机抽主题用）')
+lines.append('static func themes() -> Array:')
+lines.append('\treturn FRAG.keys()')
+lines.append('')
+lines.append('')
+lines.append('## 前 3 级的关键字池：[代码, 讲解] 的列表，按代码去重。')
+lines.append('## 用户定的规则：前 3 级不看主题，无论升哪个技能都从这个池里随机抽，')
+lines.append('## 所以 FRAG 里 Lv1-3 的内容只是「池的素材」，出题端走 KW 而不是 frag()。')
+lines.append('const KW := [')
+for code, tip in kw_pool:
+    lines.append('\t[%s, %s],' % (gd_str(code), gd_str(tip)))
+lines.append(']')
+lines.append('')
+lines.append('')
+lines.append('## 关键字池有多少条')
+lines.append('static func keyword_count() -> int:')
+lines.append('\treturn KW.size()')
+lines.append('')
+lines.append('')
+lines.append('## 取关键字池第 i 条的代码（越界退回第 0 条）')
+lines.append('static func keyword_code(i: int) -> String:')
+lines.append('\tif KW.is_empty():')
+lines.append('\t\treturn ""')
+lines.append('\tvar k := i')
+lines.append('\tif k < 0 or k >= KW.size():')
+lines.append('\t\tk = 0')
+lines.append('\treturn str((KW[k] as Array)[0])')
+lines.append('')
+lines.append('')
+lines.append('## 取关键字池第 i 条的讲解')
+lines.append('static func keyword_tip(i: int) -> String:')
+lines.append('\tif KW.is_empty():')
+lines.append('\t\treturn ""')
+lines.append('\tvar k := i')
+lines.append('\tif k < 0 or k >= KW.size():')
+lines.append('\t\tk = 0')
+lines.append('\treturn str((KW[k] as Array)[1])')
 lines.append('')
 
 out = "\n".join(lines)

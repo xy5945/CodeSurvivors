@@ -19,6 +19,7 @@ extends Node2D
 @onready var hud: HUD = $HUD
 @onready var level_up: LevelUpUI = $LevelUpUI
 @onready var code_input: CodeInputUI = $CodeInputUI
+@onready var rescue: RescueUI = $RescueUI
 @onready var knowledge: KnowledgeUI = $KnowledgeUI
 @onready var result: ResultUI = $ResultUI
 @onready var char_select: CharSelectUI = $CharSelectUI
@@ -51,6 +52,14 @@ var _was_victory := false
 var _was_boss := false
 # 一局结束（死亡/通关）到弹结算之间的倒计时；<0 表示还没结束
 var _end_delay := -1.0
+# 「救我一命」：血量归零后先弹选择题，做对满级题换 100 血。一局 3 次，用完就真失败。
+const RESCUE_MAX := 3
+const RESCUE_HEAL := 100.0
+## 复活后的无敌时间：不做这一步，玩家会在原地被围着的怪再打死一次
+const RESCUE_IFRAME := 3.0
+var _rescue_left := RESCUE_MAX
+var _rescue_gave_up := false   # 玩家主动点了「确认失败」
+var _rescue_active := false    # 打码面板当前是不是在给救援用
 # 通关解锁：一局只记一次（_update_end 每帧都会被调，不能重复记账）
 var _unlock_recorded := false
 var _unlock_msg := ""
@@ -195,6 +204,11 @@ func _ready() -> void:
 	level_up.sim = sim
 	level_up.resolved.connect(_on_levelup_resolved)
 	level_up.bind_code_input(code_input)
+	# 打码面板是共用的：救援也借它出题。solved 只连一次，
+	# 由 _rescue_active 决定这次放行算在谁头上（升级还是救命）。
+	code_input.solved.connect(_on_code_solved)
+	rescue.rescue_requested.connect(_on_rescue_try)
+	rescue.give_up_requested.connect(_on_rescue_give_up)
 	result.restart_requested.connect(_on_restart)
 	result.quit_requested.connect(_on_quit)
 	char_select.selected.connect(_on_char_selected)
@@ -237,6 +251,21 @@ func _ready() -> void:
 	if OS.get_cmdline_user_args().has("--resulttest"):
 		set_process(false)
 		_resulttest()
+		get_tree().quit()
+		return
+
+	# --rescueshot：「救我一命」面板截图（排版只能靠眼睛看）
+	if OS.get_cmdline_user_args().has("--rescueshot"):
+		rescue.open(3)
+		await RenderingServer.frame_post_draw
+		await RenderingServer.frame_post_draw
+		_save_shot()
+		get_tree().quit()
+		return
+
+	if OS.get_cmdline_user_args().has("--rescuetest"):
+		set_process(false)
+		_rescuetest()
 		get_tree().quit()
 		return
 
@@ -586,10 +615,15 @@ func _ready() -> void:
 func _set_gameplay_ui(on: bool) -> void:
 	hud.visible = on
 	vignette.visible = on
+	if on:
+		# 打码是强制的：老存档里存过「不打码」的，开局一律钉回标准档
+		level_up.code_mode = CodeChallenge.Mode.STD
+		hud.set_rescue(_rescue_left)
 
 
 ## 标题画面点掉之后进选人。
 func _on_title_start() -> void:
+	title.enforce_code_mode()
 	char_select.open()
 
 
@@ -636,6 +670,8 @@ func _on_char_selected(cid: String) -> void:
 func _resulttest() -> void:
 	print("")
 	print("=== 结算界面 ===")
+	# 这套测的是结算面板本身：把救命机会清零，否则死后会先弹「救我一命」
+	_rescue_left = 0
 
 	# A 死亡流程：结束后不该同帧弹面板（死亡音和红光要看得到）
 	sim.time = 275.0
@@ -719,6 +755,93 @@ func _resulttest() -> void:
 		"OK" if not result.is_open() else "FAIL",
 		"OK" if not get_tree().paused else "FAIL"])
 	print("")
+
+
+## 运行：godot --headless --path . -- --rescuetest
+## 「救我一命」整条链路：血空 -> 弹选择题 -> 打对满级题 -> 复活 100 血；
+## 三次用完 / 主动确认失败 -> 直接进失败结算。
+func _rescuetest() -> void:
+	print("")
+	print("=== 救我一命 ===")
+	var ok := [0, 0]
+
+	# A 血空先弹「救我一命」，不是失败结算
+	sim.dead = true
+	_end_delay = -1.0
+	_update_end(0.016)
+	_update_end(1.0)
+	_update_end(1.0)
+	Bench._tally(ok, rescue.is_open() and not result.is_open(),
+		"血空 → 弹「救我一命」（结算未开 %s）" % (not result.is_open()))
+
+	# B 点「救我一命」→ 让位给打码面板，游戏仍然暂停
+	rescue._rescue()
+	Bench._tally(ok, code_input.visible and not rescue.is_open() and get_tree().paused,
+		"点救命 → 打码面板可见 %s · 仍暂停 %s" % [code_input.visible, get_tree().paused])
+	var lv8: bool = code_input._target.count("\n") >= 4
+	Bench._tally(ok, lv8, "救命题是满级小题（%d 行）" % (code_input._target.count("\n") + 1))
+
+	# C 打错不放行
+	code_input._edit.text = code_input._target.substr(0, maxi(1, code_input._target.length() - 3))
+	code_input._update()
+	code_input._process(0.1)
+	Bench._tally(ok, sim.dead and code_input.visible, "打错 → 不放行（仍在游戏中 %s）" % sim.dead)
+
+	# D 打对 → 复活 100 血、扣一次机会、恢复游戏
+	code_input._edit.text = code_input._target
+	code_input._update()
+	for i in 8:
+		code_input._process(0.1)
+	Bench._tally(ok, not sim.dead and int(sim.player_hp) == 100,
+		"打对 → 复活 HP %d · 剩余机会 %d" % [int(sim.player_hp), _rescue_left])
+	Bench._tally(ok, _rescue_left == RESCUE_MAX - 1, "机会扣了 1 次（剩 %d）" % _rescue_left)
+	Bench._tally(ok, not get_tree().paused and sim.iframe > 0.0,
+		"复活后恢复游戏并给了 %.1f 秒无敌" % sim.iframe)
+
+	# E 用光剩下两次 → 第三次血空直接进结算
+	for i in 2:
+		sim.dead = true
+		_end_delay = -1.0
+		_update_end(0.016)
+		_update_end(1.0)
+		_update_end(1.0)
+		rescue._rescue()
+		code_input._edit.text = code_input._target
+		code_input._update()
+		for k in 8:
+			code_input._process(0.1)
+	Bench._tally(ok, _rescue_left == 0, "两次用完 → 剩余机会 %d" % _rescue_left)
+
+	sim.dead = true
+	_end_delay = -1.0
+	_update_end(0.016)
+	_update_end(1.0)
+	_update_end(1.0)
+	Bench._tally(ok, result.is_open() and not rescue.is_open(),
+		"机会用光后再死 → 直接进失败结算")
+
+	# F 没用光时点「确认失败」→ 立刻结算，不再给机会
+	result.debug_reset()
+	sim.dead = false
+	_rescue_left = 2
+	_rescue_gave_up = false
+	sim.dead = true
+	_end_delay = -1.0
+	_update_end(0.016)
+	_update_end(1.0)
+	_update_end(1.0)
+	var opened: bool = rescue.is_open()
+	rescue._give_up()
+	_update_end(0.016)
+	_update_end(1.0)
+	_update_end(1.0)
+	Bench._tally(ok, opened and result.is_open(),
+		"确认失败 → 放弃剩余机会直接结算（还剩 %d 次也照判）" % _rescue_left)
+
+	print("结果 %d/%d" % [ok[0], ok[1]])
+	print("")
+	result.debug_reset()
+	get_tree().paused = false
 
 
 func _row_texts() -> String:
@@ -1094,19 +1217,71 @@ func _process(delta: float) -> void:
 func _update_end(delta: float) -> void:
 	if not (sim.dead or sim.victory):
 		return
-	if result.is_open():
+	if result.is_open() or rescue.is_open() or _rescue_active:
 		return
 	if _end_delay < 0.0:
 		_end_delay = ResultUI.END_DELAY
 		return
 	_end_delay -= delta
-	if _end_delay <= 0.0:
-		# 通关才记账：用第 n 个角色赢了，才开第 n+1 个。
-		# 记在开面板之前 —— 面板上要直接写"解锁了谁"。
-		if sim.victory and not _unlock_recorded and not _no_save:
-			_unlock_recorded = true
-			_unlock_msg = SaveData.mark_cleared(sim.char_id)
-		result.open(sim, knowledge.unlocked_count(), KnowledgeDB.total(), _unlock_msg)
+	if _end_delay > 0.0:
+		return
+
+	# 死亡但还有救命机会：先弹「救我一命」，不直接判死。
+	# 通关、机会用完、玩家自己点了确认失败，才走结算面板。
+	if sim.dead and not sim.victory and not _rescue_gave_up and _rescue_left > 0:
+		rescue.open(_rescue_left)
+		return
+
+	# 通关才记账：用第 n 个角色赢了，才开第 n+1 个。
+	# 记在开面板之前 —— 面板上要直接写"解锁了谁"。
+	if sim.victory and not _unlock_recorded and not _no_save:
+		_unlock_recorded = true
+		_unlock_msg = SaveData.mark_cleared(sim.char_id)
+	result.open(sim, knowledge.unlocked_count(), KnowledgeDB.total(), _unlock_msg)
+
+
+# ---------------------------------------------------------------- 救我一命
+
+## 打码面板放行时的统一入口：这一下算升级还是算救命。
+## 两个来源共用同一个面板，各自连 solved 的话会互相串台（升级项被白白应用一次）。
+func _on_code_solved() -> void:
+	if _rescue_active:
+		_rescue_revive()
+		return
+	# 升级那一路由 LevelUpUI 自己处理（它只认自己打开的那一轮）
+	level_up._on_code_solved()
+
+
+func _on_rescue_try() -> void:
+	Sfx.play("ui")
+	_rescue_active = true
+	# 满级小题：随机主题 + 随机变体。救命不能用简单题糊弄过去。
+	code_input.open_rescue("救我一命 · 打对这道题才能复活", CodeChallenge.Mode.STD)
+
+
+## 做对了：扣一次机会、回满 100 血、给无敌帧和清场，然后继续打。
+func _rescue_revive() -> void:
+	_rescue_active = false
+	_rescue_left -= 1
+	sim.dead = false
+	sim.player_hp = minf(RESCUE_HEAL, sim.max_hp)
+	sim.iframe = RESCUE_IFRAME
+	sim.bullet_iframe = RESCUE_IFRAME
+	# 原地复活要是还被一群怪围着，100 血撑不了两秒 —— 顺手把视野里的杂兵清掉
+	sim.clear_visible_enemies()
+	_end_delay = -1.0
+	_was_dead = false
+	Sfx.restart_bgm()
+	get_tree().paused = false
+	Input.set_mouse_mode(Input.MOUSE_MODE_HIDDEN)
+	hud.set_rescue(_rescue_left)
+
+
+## 确认失败：放弃剩下的机会，直接进结算
+func _on_rescue_give_up() -> void:
+	Sfx.play("ui")
+	_rescue_gave_up = true
+	_end_delay = 0.0      # 下一帧就开结算，不用再等一遍死亡演出
 
 
 ## 重开：直接重载场景。手动 reset 要清七八个对象池 + 空间网格 + 所有渲染器
@@ -1242,7 +1417,9 @@ func _test_code_ui() -> void:
 	# 3 全角输入法 -> 必须放行，否则孩子卡在输入法上
 	solved[0] = 0
 	ui.open("测试 全角", "pointer", 3, false, CodeChallenge.Mode.STD)
-	var full := target.replace("(", "（").replace(")", "）").replace(";", "；")
+	# 必须用 ui._target：前 3 级现在是随机抽关键字，每次 open 出来的题都不一样，
+	# 拿上一次的 target 去比对只会测出一个"永远不对"的假失败
+	var full := ui._target.replace("(", "（").replace(")", "）").replace(";", "；")
 	ui._edit.text = full
 	ui._update()
 	for i in 8:
