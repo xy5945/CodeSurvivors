@@ -25,6 +25,9 @@ const K_CLEARED := "cleared"
 ## 只记「这一个有效期从哪天开始、总共多少天」，不记到期日 ——
 ## 记到期日的话，续期就得做加法，"再续一次"会把天数叠加起来；
 ## 记起算日则是「重置为今天」，重复输入同一个激活码结果不变（天然幂等）。
+const SEC_SET := "settings"
+const K_CODE_MODE := "code_mode"        # 打码难度档位（见 CodeChallenge.Mode）
+
 const SEC_LIC := "license"
 const K_START_DAY := "start_day"        # 当前有效期的起算日（本地日序号）
 const K_DAYS := "days"                  # 有效期天数，0 = 永久
@@ -59,6 +62,10 @@ static var last_seen_ts := 0
 ## 本机用过的激活码指纹。用途只有一个：**拒绝同一张码重复激活**。
 ## 不记它的话，「起算日重置为今天」会让学生拿自己那一张码无限续期。
 static var used_codes: Array[String] = []
+
+## 升级打码的难度档位。默认标准档（2 = CodeChallenge.Mode.STD）。
+## 用数字而不是枚举，免得存档模块反向依赖玩法模块。
+static var code_mode: int = 2
 
 ## 测试用：写到别的文件去，别把玩家的真存档冲掉（--savetest 会设它）。
 static var test_path := ""
@@ -98,6 +105,7 @@ static func load_game() -> void:
 		last_seen_ts = int(cf.get_value(SEC_LIC, K_LAST_TS, 0))
 		for c in (cf.get_value(SEC_LIC, K_USED_CODES, []) as Array):
 			used_codes.append(str(c))
+		code_mode = clampi(int(cf.get_value(SEC_SET, K_CODE_MODE, 2)), 0, 3)
 	loaded = true
 	_bootstrap_license()
 
@@ -113,6 +121,7 @@ static func save_game() -> void:
 	cf.set_value(SEC_LIC, K_LAST_DAY, last_seen_day)
 	cf.set_value(SEC_LIC, K_LAST_TS, last_seen_ts)
 	cf.set_value(SEC_LIC, K_USED_CODES, used_codes)
+	cf.set_value(SEC_SET, K_CODE_MODE, code_mode)
 	var err := cf.save(path())
 	if err != OK:
 		push_warning("[SaveData] 存档写入失败 %d" % err)

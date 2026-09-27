@@ -2418,3 +2418,86 @@ static func _diag_one(label: String, with_break: bool) -> void:
 		print("  t=%2.0fs freeze=%.2f cd=%.2f state=%d dist=%5.0f hp=%7.0f skills=%d 承受=%4.0f" % [
 			(s + 1) * 3.0, e.freeze[b], e.skill_cd[b], e.skill_state[b],
 			sqrt(dx * dx + dy * dy), e.hp[b], sim.boss_skills, sim.damage_taken])
+
+# ---------------------------------------------------------------- 升级打码
+
+## 打码题库 + 校验算法。校验是这个功能的命门：
+## 判松了孩子打错也能过，判严了输入法都能把他卡死，两边都不能出事。
+static func run_code_test() -> void:
+	print("")
+	print("=== 升级打码 · 题库与校验 ===")
+	var c := [0, 0]
+
+	# A 题库完整性
+	var themes := ["whip", "orbit", "broadcast", "judgment", "blade", "pointer",
+		"volley", "gc", "buffer", "breakpoint", "forever", "rebuild", "general"]
+	var bad := 0
+	for th in themes:
+		for lv in range(1, 9):
+			if (CodeChallengeDB.frag(th, lv) as Array).is_empty():
+				bad += 1
+			if CodeChallengeDB.tip(th, lv).is_empty():
+				bad += 1
+	_tally(c, bad == 0, "题库 %d 主题 x 8 级 全部非空且有讲解" % themes.size())
+
+	var len1 := _text("orbit", 1).length()
+	var len8 := _text("orbit", 8).length()
+	_tally(c, len8 > len1 * 8, "长度随等级递增（orbit Lv1 %d 字符 -> Lv8 %d）" % [len1, len8])
+
+	# B 三档派生
+	var e := CodeChallenge.build("orbit", 8, false, CodeChallenge.Mode.EASY)
+	var s := CodeChallenge.build("orbit", 8, false, CodeChallenge.Mode.STD)
+	var h := CodeChallenge.build("orbit", 8, false, CodeChallenge.Mode.HARD)
+	_tally(c, (e["lines"] as Array).size() == 1, "轻松档只打核心一行")
+	_tally(c, (h["lines"] as Array).size() > (s["lines"] as Array).size(),
+		"严格档比标准档长（%d 行 -> %d 行）" % [
+			(s["lines"] as Array).size(), (h["lines"] as Array).size()])
+	_tally(c, str(h["text"]).contains("int main() {"), "严格档套上了 main 结构")
+	_tally(c, not str(CodeChallenge.build("orbit", 3, false,
+		CodeChallenge.Mode.HARD)["text"]).contains("int main()"),
+		"低等级不套 main（片段套上不合语法）")
+	_tally(c, int(CodeChallenge.build("orbit", 1, true, CodeChallenge.Mode.STD)["level"]) == 8,
+		"进化卡走满级题")
+
+	# C 校验算法：该放的放，该卡的卡
+	var t := "if (n > 10) {\n    n = 10;\n}"
+	_tally(c, _code_done(t, t), "原样照打 -> 通过")
+	_tally(c, _code_done(t, "if （n > 10） {\n    n = 10；\n}"), "全角标点 -> 放过")
+	_tally(c, _code_done(t, "if (n > 10) {\n\tn = 10;\n}"), "Tab 当缩进 -> 放过")
+	_tally(c, _code_done(t, "if (n > 10) {\n n = 10;\n}"), "缩进只打一个空格 -> 放过")
+	_tally(c, _code_done(t, "if  (n  >  10)  {\n    n = 10;   \n}  "), "多余空格与行尾空白 -> 放过")
+	_tally(c, _code_err(t, "if (n > 10) {\nn = 10;\n}"), "行首缩进没打 -> 判错")
+	_tally(c, _code_err(t, "if (n > 10) {\n    m = 10;\n}"), "打错字符 -> 判错")
+	_tally(c, _code_err(t, t + "x") and not _code_done(t, t + "x"),
+		"多打一个字符 -> 判错且不放行")
+	_tally(c, _code_done(t, t.to_upper()) == false, "大小写必须一致（C++ 区分大小写）")
+
+	var st := CodeChallenge.match_state(t, "if (n > 10) {")
+	_tally(c, not bool(st["done"]) and not bool(st["err"]), "只打一半 -> 未完成但不算错")
+	# "if (n > 10) {" 共 13 个字符
+	_tally(c, int(st["tpos"]) == 13, "已打字符数算对（%d）" % int(st["tpos"]))
+	# 索引 18 是第二行的 n（14-17 是四个空格）
+	var lc := CodeChallenge.pos_to_line_col(t, 18)
+	_tally(c, lc == Vector2i(2, 5), "出错位置换算到第 %d 行第 %d 列" % [lc.x, lc.y])
+
+	print("")
+	print("结果 %d/%d" % [c[1], c[0]])
+
+
+static func _text(theme: String, lv: int) -> String:
+	return "\n".join(PackedStringArray(CodeChallengeDB.frag(theme, lv)))
+
+
+static func _code_done(t: String, inp: String) -> bool:
+	return bool(CodeChallenge.match_state(t, inp)["done"])
+
+
+static func _code_err(t: String, inp: String) -> bool:
+	return bool(CodeChallenge.match_state(t, inp)["err"])
+
+
+static func _tally(c: Array, ok: bool, label: String) -> void:
+	c[0] += 1
+	if ok:
+		c[1] += 1
+	print("  %s %s" % ["OK  " if ok else "FAIL", label])

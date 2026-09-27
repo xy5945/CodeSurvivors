@@ -18,6 +18,7 @@ extends Node2D
 @onready var camera: Camera2D = $Camera2D
 @onready var hud: HUD = $HUD
 @onready var level_up: LevelUpUI = $LevelUpUI
+@onready var code_input: CodeInputUI = $CodeInputUI
 @onready var knowledge: KnowledgeUI = $KnowledgeUI
 @onready var result: ResultUI = $ResultUI
 @onready var char_select: CharSelectUI = $CharSelectUI
@@ -114,6 +115,14 @@ func _ready() -> void:
 		get_tree().quit()
 		return
 
+	if OS.get_cmdline_user_args().has("--codetest"):
+		set_process(false)
+		Bench.run_code_test()
+		# 里面有 await，quit 必须写在测试函数末尾：
+		# 挂起的是 _ready 的协程，这里 return 之后游戏循环照常跑起来，进程不会退
+		_test_code_ui()
+		return
+
 	if OS.get_cmdline_user_args().has("--chesttest"):
 		set_process(false)
 		Bench.run_chest_test()
@@ -185,6 +194,7 @@ func _ready() -> void:
 	whip_arc.sim = sim
 	level_up.sim = sim
 	level_up.resolved.connect(_on_levelup_resolved)
+	level_up.bind_code_input(code_input)
 	result.restart_requested.connect(_on_restart)
 	result.quit_requested.connect(_on_quit)
 	char_select.selected.connect(_on_char_selected)
@@ -337,6 +347,28 @@ func _ready() -> void:
 			_set_gameplay_ui(false)
 			help.open("title")
 			help.show_page(pno)
+			await RenderingServer.frame_post_draw
+			await RenderingServer.frame_post_draw
+			_save_shot()
+			get_tree().quit()
+			return
+
+	# --codeshot[=<升级id>] / --codeshotmax：打码面板截图。
+	# 视口只有 640x360，严格档最长那道 12 行代码最容易顶出面板，
+	# headless 测不出来，只能截出来用眼睛看。
+	for a in OS.get_cmdline_user_args():
+		if a.begins_with("--codeshotmax"):
+			code_input.open("循环护盾　Lv 7 → 8", "orbit", 8, false, CodeChallenge.Mode.HARD)
+			await RenderingServer.frame_post_draw
+			await RenderingServer.frame_post_draw
+			_save_shot()
+			get_tree().quit()
+			return
+
+	for a in OS.get_cmdline_user_args():
+		if a.begins_with("--codeshot"):
+			var cid := a.split("=")[-1] if "=" in a else "orbit"
+			code_input.open("循环护盾　Lv 4 → 5", cid, 5, false, CodeChallenge.Mode.STD)
 			await RenderingServer.frame_post_draw
 			await RenderingServer.frame_post_draw
 			_save_shot()
@@ -698,6 +730,9 @@ func _collect_buttons(n: Node, out: Array[Button]) -> void:
 
 
 func _uitest() -> void:
+	# 这套测试验证的是「点卡 -> 立即升级生效」这条旧链路；
+	# 打码链路有自己的 --codetest，两边各守各的，别互相干扰
+	level_up.code_mode = CodeChallenge.Mode.OFF
 	print("")
 	print("=== 升级弹窗 · 无头测试 ===")
 
@@ -1129,3 +1164,58 @@ func _sync_audio() -> void:
 ## 弹窗关闭后清掉累积时间，否则暂停期间攒下的 delta 会让仿真瞬间连跑好几步
 func _on_levelup_resolved() -> void:
 	_acc = 0.0
+
+## 打码面板的端到端验证：真的建一个面板、真的打字、真的看它放不放行。
+## 逻辑层测的是算法，这里测的是「打得对 -> 升级能生效」这条链路通不通。
+func _test_code_ui() -> void:
+	print("")
+	print("=== 升级打码 · 面板端到端 ===")
+	var ui := CodeInputUI.new()
+	add_child(ui)
+	await get_tree().process_frame
+
+	# 用数组计数：GDScript 的 lambda 捕获 int 是值拷贝，
+	# 在闭包里 solved += 1 改不动外面那个数，测出来永远是 0。
+	var solved := [0]
+	ui.solved.connect(func() -> void: solved[0] += 1)
+
+	# 1 打对 -> 放行
+	ui.open("测试 指针追踪 Lv3", "pointer", 3, false, CodeChallenge.Mode.STD)
+	var target := ui._target
+	print("  题目 %d 行 / %d 字符" % [target.count("\n") + 1, target.length()])
+	ui._edit.text = target
+	ui._update()
+	for i in 8:
+		ui._process(0.1)
+	print("  A 全打对 -> %s" % ("OK   放行" if solved[0] == 1 else "FAIL 没放行"))
+
+	# 2 打错 -> 不放行
+	solved[0] = 0
+	ui.open("测试 打错", "pointer", 3, false, CodeChallenge.Mode.STD)
+	ui._edit.text = "int* p = &x;"
+	ui._update()
+	for i in 8:
+		ui._process(0.1)
+	print("  B 打错 -> %s" % ("OK   拦住" if solved[0] == 0 else "FAIL 放行了"))
+
+	# 3 全角输入法 -> 必须放行，否则孩子卡在输入法上
+	solved[0] = 0
+	ui.open("测试 全角", "pointer", 3, false, CodeChallenge.Mode.STD)
+	var full := target.replace("(", "（").replace(")", "）").replace(";", "；")
+	ui._edit.text = full
+	ui._update()
+	for i in 8:
+		ui._process(0.1)
+	print("  C 全角输入 -> %s" % ("OK   放行" if solved[0] == 1 else "FAIL 没放行"))
+
+	# 4 三档都能出题且严格档最长
+	var lens := []
+	for m in [CodeChallenge.Mode.EASY, CodeChallenge.Mode.STD, CodeChallenge.Mode.HARD]:
+		var ch := CodeChallenge.build("orbit", 8, false, m)
+		lens.append(str(ch["text"]).length())
+	print("  D 三档长度 轻松%d < 标准%d < 严格%d -> %s" % [
+		lens[0], lens[1], lens[2],
+		"OK" if lens[0] < lens[1] and lens[1] < lens[2] else "FAIL"])
+
+	ui.queue_free()
+	get_tree().quit()

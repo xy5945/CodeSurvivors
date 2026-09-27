@@ -9,3 +9,7 @@ _static_wght400.ttf
 # 激活码密钥：整套授权体系唯一的秘密，不进仓库（模板见 core/license_key.gd.example）
 core/license_key.gd
 core/license_key.gd.uid
+
+# 导出预设含 PCK 加密密钥，泄露等于加密失效
+export_presets.cfg
+build/

@@ -30,6 +30,7 @@ const DESC_TEXT := "你是一段程序 —— 在 Bug 的海洋里活到编译�
 const FOOTER_TEXT := "稚码园机器人编程　原创作品　v1.0.0"
 
 var _bg: Node2D
+var _code_btn: Button
 var _status: Label
 var _start_btn: Button
 var _lic_btn: Button
@@ -122,6 +123,15 @@ func _build() -> void:
 	help_btn.size = Vector2(160.0, 24.0)
 	help_btn.pressed.connect(func() -> void: help_requested.emit())
 	root.add_child(help_btn)
+
+	# 打码难度开关。放在「游戏说明」右侧：它属于玩法设置，
+	# 不该混进下方的授权/落款区，也不该抢「开始游戏」的位置。
+	_code_btn = UiFont.make_button("代码挑战：标准", 12)
+	_code_btn.position = Vector2(412.0, 218.0)
+	_code_btn.size = Vector2(150.0, 24.0)
+	_code_btn.pressed.connect(_on_code_mode)
+	root.add_child(_code_btn)
+	_refresh_code_btn()
 
 	var about_btn := UiFont.make_button("关于本作品", 12)
 	about_btn.position = Vector2(240.0, 250.0)
@@ -259,3 +269,19 @@ class _TitleBg extends Node2D:
 		for d in _chars:
 			draw_string(f, Vector2(float(d["x"]), float(d["y"])), str(d["c"]),
 				HORIZONTAL_ALIGNMENT_LEFT, -1.0, 13, Color(0.35, 0.85, 1.0, 0.20))
+
+## 循环切换打码难度：不打码 -> 轻松 -> 标准 -> 严格。
+## 存进存档而不是只留在内存里：体验课要关掉、常规课要标准，
+## 每次进来重选一遍太烦，而且孩子自己开机时不会去改。
+func _on_code_mode() -> void:
+	Sfx.play("ui")
+	SaveData.code_mode = (SaveData.code_mode + 1) % 4
+	SaveData.save_game()
+	_refresh_code_btn()
+
+
+func _refresh_code_btn() -> void:
+	if _code_btn == null:
+		return
+	var m := SaveData.code_mode
+	_code_btn.text = "代码挑战：" + str(CodeChallenge.MODE_NAMES[m])

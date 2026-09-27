@@ -15,6 +15,11 @@ signal resolved
 const CARD_GAP := 14
 
 var sim: Sim = null
+## 打码面板，由 main.gd 接进来。null 时退回「点了直接升级」。
+var code_input: CodeInputUI = null
+## 难度档位（CodeChallenge.Mode）。OFF 时点卡直接生效。
+var code_mode: int = CodeChallenge.Mode.STD
+var _pending_id := ""
 
 var _dim: ColorRect
 var _center: Control
@@ -123,6 +128,26 @@ func _on_card_picked(card: UpgradeCard) -> void:
 		return
 
 	var id := str(card.def["id"])
+
+	# 紧急补丁是保底选项（武器被动全满时只剩它），不该被题目卡住；
+	# 关掉打码或没接面板时，退回原来的「点了直接升级」。
+	if id == "_heal" or code_mode == CodeChallenge.Mode.OFF or code_input == null:
+		_apply(id)
+		return
+
+	var head := "★ 进化" if card.is_evo else (
+		"新获得" if card.target_level == 1 else "Lv %d → %d" % [card.target_level - 1, card.target_level])
+	_pending_id = id
+	code_input.open("%s　%s" % [str(card.def["name"]), head],
+		id, card.target_level, card.is_evo, code_mode)
+
+
+func _on_code_solved() -> void:
+	_apply(_pending_id)
+
+
+## 真正写入升级。打码通过后才轮到这里。
+func _apply(id: String) -> void:
 	if id == "_heal":
 		sim.apply_heal_pick(30.0)
 	else:
@@ -132,3 +157,9 @@ func _on_card_picked(card: UpgradeCard) -> void:
 		_roll()          # 连升多级：继续选
 	else:
 		close()
+
+
+## 由 main.gd 调一次，把打码面板接上
+func bind_code_input(ci: CodeInputUI) -> void:
+	code_input = ci
+	ci.solved.connect(_on_code_solved)

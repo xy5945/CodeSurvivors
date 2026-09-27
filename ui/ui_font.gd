@@ -12,14 +12,26 @@ extends RefCounted
 ##
 
 const FONT_PATH := "res://fonts/NotoSansSC-Regular.ttf"
+## 代码题用的等宽字体。Cascadia Mono（微软开源，SIL OFL 1.1，可合法内嵌分发），
+## 已钉 wght=400 并子集到 ASCII —— 代码块只有 ASCII，中文走 CJK 字体。
+## 别换成 Consolas / Courier New：那是专有字体，不能随包分发。
+const MONO_PATH := "res://fonts/CascadiaMono-Regular.ttf"
 
 static var _cache: Font = null
+static var _mono_cache: Font = null
 
 
 static func cjk() -> Font:
 	if _cache == null:
 		_cache = load(FONT_PATH)
 	return _cache
+
+
+## 等宽字体（代码块专用）。不等宽的话 C++ 代码的缩进对不齐，照着打就没意义了。
+static func mono() -> Font:
+	if _mono_cache == null:
+		_mono_cache = load(MONO_PATH)
+	return _mono_cache
 
 
 ## 统一风格的按钮。标题/选人/说明/暂停四处都要用，各写一遍的话
@@ -56,3 +68,9 @@ static func apply(ctrl: Control, size: int, color: Color) -> void:
 	ctrl.add_theme_color_override("font_shadow_color", Color(0, 0, 0, 0.85))
 	ctrl.add_theme_constant_override("shadow_offset_x", 1)
 	ctrl.add_theme_constant_override("shadow_offset_y", 1)
+
+## 给代码块套等宽字体。不带描边 —— 代码要的是锐利，描边会让小字号糊掉。
+static func apply_mono(ctrl: Control, size: int, color: Color) -> void:
+	ctrl.add_theme_font_override("font", mono())
+	ctrl.add_theme_font_size_override("font_size", size)
+	ctrl.add_theme_color_override("font_color", color)
