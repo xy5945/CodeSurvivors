@@ -2461,6 +2461,29 @@ static func run_code_test() -> void:
 	var len8 := _text_v("orbit", 8, 0).length()
 	_tally(c, len8 > len1 * 8, "长度随等级递增（orbit Lv1 %d 字符 -> Lv8 %d）" % [len1, len8])
 
+	# 梯度：用户定的手感规则。改题库时最容易漂的就是这一条，
+	# 所以每一道变体都按等级卡一遍行数和字符数。
+	#   Lv1-3 只打关键字（1 行 <= 12 字符）/ Lv4-5 <= 2 行 / Lv6-7 <= 4 行 / Lv8 完整小题 5-9 行
+	var grad_bad := 0
+	for th in themes:
+		for lv in range(1, 9):
+			for vi in CodeChallengeDB.variants(th, lv):
+				var arr := CodeChallengeDB.frag(th, lv, vi) as Array
+				var txt := _text_v(th, lv, vi)
+				var ok := false
+				if lv <= 3:
+					ok = arr.size() == 1 and txt.length() <= 12
+				elif lv <= 5:
+					ok = arr.size() <= 2
+				elif lv <= 7:
+					ok = arr.size() <= 4
+				else:
+					ok = arr.size() >= 5 and arr.size() <= 9
+				if not ok:
+					grad_bad += 1
+					print("    不符 %s Lv%d #%d：%d 行 / %d 字符" % [th, lv, vi, arr.size(), txt.length()])
+	_tally(c, grad_bad == 0, "梯度 前3级=关键字·4-5级<=2行·6-7级<=4行·满级=完整小题（不符 %d 道）" % grad_bad)
+
 	# A2 随机抽变体
 	CodeChallenge.set_seed(20260927)
 	var picks := {}
