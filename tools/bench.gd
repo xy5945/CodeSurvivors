@@ -2428,35 +2428,65 @@ static func run_code_test() -> void:
 	print("=== 升级打码 · 题库与校验 ===")
 	var c := [0, 0]
 
-	# A 题库完整性
+	# A 题库完整性：每级每道变体都要有代码、有讲解
 	var themes := ["whip", "orbit", "broadcast", "judgment", "blade", "pointer",
 		"volley", "gc", "buffer", "breakpoint", "forever", "rebuild", "general"]
 	var bad := 0
+	var nq := 0
 	for th in themes:
 		for lv in range(1, 9):
-			if (CodeChallengeDB.frag(th, lv) as Array).is_empty():
-				bad += 1
-			if CodeChallengeDB.tip(th, lv).is_empty():
-				bad += 1
-	_tally(c, bad == 0, "题库 %d 主题 x 8 级 全部非空且有讲解" % themes.size())
+			var nv := CodeChallengeDB.variants(th, lv)
+			nq += nv
+			for vi in nv:
+				if (CodeChallengeDB.frag(th, lv, vi) as Array).is_empty():
+					bad += 1
+				if CodeChallengeDB.tip(th, lv, vi).is_empty():
+					bad += 1
+	_tally(c, bad == 0, "题库 %d 主题 x 8 级 共 %d 道题，全部非空且有讲解" % [themes.size(), nq])
 
-	var len1 := _text("orbit", 1).length()
-	var len8 := _text("orbit", 8).length()
+	# 满级题不能千篇一律 —— 以前 13 个主题里有两个都在算「0 到 100 的和」
+	var seen := {}
+	var dup := 0
+	var n8 := 0
+	for th in themes:
+		for vi in CodeChallengeDB.variants(th, 8):
+			var key := _text_v(th, 8, vi)
+			n8 += 1
+			if seen.has(key):
+				dup += 1
+			seen[key] = true
+	_tally(c, dup == 0, "满级题 %d 道互不相同（重复 %d 道）" % [n8, dup])
+
+	var len1 := _text_v("orbit", 1, 0).length()
+	var len8 := _text_v("orbit", 8, 0).length()
 	_tally(c, len8 > len1 * 8, "长度随等级递增（orbit Lv1 %d 字符 -> Lv8 %d）" % [len1, len8])
 
-	# B 三档派生
-	var e := CodeChallenge.build("orbit", 8, false, CodeChallenge.Mode.EASY)
-	var s := CodeChallenge.build("orbit", 8, false, CodeChallenge.Mode.STD)
-	var h := CodeChallenge.build("orbit", 8, false, CodeChallenge.Mode.HARD)
+	# A2 随机抽变体
+	CodeChallenge.set_seed(20260927)
+	var picks := {}
+	for i in 60:
+		picks[int(CodeChallenge.build("orbit", 8, false, CodeChallenge.Mode.STD)["variant"])] = true
+	_tally(c, picks.size() >= 2, "随机抽题能抽到不同变体（60 次抽到 %d 种）" % picks.size())
+	CodeChallenge.set_seed(7)
+	var a1 := str(CodeChallenge.build("orbit", 8, false, CodeChallenge.Mode.STD)["text"])
+	CodeChallenge.set_seed(7)
+	var a2 := str(CodeChallenge.build("orbit", 8, false, CodeChallenge.Mode.STD)["text"])
+	_tally(c, a1 == a2, "钉住种子 -> 出题可复现（测试用）")
+	CodeChallenge.randomize_seed()
+
+	# B 三档派生（钉 variant 0，不然三档各抽各的变体，长度没法比）
+	var e := CodeChallenge.build("orbit", 8, false, CodeChallenge.Mode.EASY, 0)
+	var s := CodeChallenge.build("orbit", 8, false, CodeChallenge.Mode.STD, 0)
+	var h := CodeChallenge.build("orbit", 8, false, CodeChallenge.Mode.HARD, 0)
 	_tally(c, (e["lines"] as Array).size() == 1, "轻松档只打核心一行")
 	_tally(c, (h["lines"] as Array).size() > (s["lines"] as Array).size(),
 		"严格档比标准档长（%d 行 -> %d 行）" % [
 			(s["lines"] as Array).size(), (h["lines"] as Array).size()])
 	_tally(c, str(h["text"]).contains("int main() {"), "严格档套上了 main 结构")
 	_tally(c, not str(CodeChallenge.build("orbit", 3, false,
-		CodeChallenge.Mode.HARD)["text"]).contains("int main()"),
+		CodeChallenge.Mode.HARD, 0)["text"]).contains("int main()"),
 		"低等级不套 main（片段套上不合语法）")
-	_tally(c, int(CodeChallenge.build("orbit", 1, true, CodeChallenge.Mode.STD)["level"]) == 8,
+	_tally(c, int(CodeChallenge.build("orbit", 1, true, CodeChallenge.Mode.STD, 0)["level"]) == 8,
 		"进化卡走满级题")
 
 	# C 校验算法：该放的放，该卡的卡
@@ -2486,6 +2516,10 @@ static func run_code_test() -> void:
 
 static func _text(theme: String, lv: int) -> String:
 	return "\n".join(PackedStringArray(CodeChallengeDB.frag(theme, lv)))
+
+
+static func _text_v(theme: String, lv: int, vi: int) -> String:
+	return "\n".join(PackedStringArray(CodeChallengeDB.frag(theme, lv, vi)))
 
 
 static func _code_done(t: String, inp: String) -> bool:

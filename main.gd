@@ -390,6 +390,17 @@ func _ready() -> void:
 			get_tree().quit()
 			return
 
+	# --readyshot：打完代码后那 1 秒「准备」提示的截图
+	if OS.get_cmdline_user_args().has("--readyshot"):
+		sim.pending_levelups = 1
+		level_up.open(sim)
+		level_up._begin_resume()
+		await RenderingServer.frame_post_draw
+		await RenderingServer.frame_post_draw
+		_save_shot()
+		get_tree().quit()
+		return
+
 	# --pauseshot：暂停界面截图
 	if OS.get_cmdline_user_args().has("--pauseshot"):
 		pause.open()
@@ -765,6 +776,31 @@ func _uitest() -> void:
 	print("第二次选完 → 剩余 %d · 已关闭 %s" % [
 		sim.pending_levelups, not level_up.visible
 	])
+
+	# ---- 打码链路的收尾：点卡后升级框必须让位，打完给 1 秒准备 ----
+	# 这一段才是玩家真正会遇到的顺序，光测打码面板本身测不出层叠问题
+	level_up.code_mode = CodeChallenge.Mode.STD
+	sim.pending_levelups = 1
+	level_up.open(sim)
+	level_up._cards[0].picked.emit(level_up._cards[0])
+	print("点卡后 → 升级框让位 %s · 打码面板可见 %s · %s" % [
+		not level_up.visible, code_input.visible,
+		"OK" if not level_up.visible and code_input.visible else "FAIL"])
+
+	code_input._edit.text = code_input._target
+	code_input._update()
+	for i in 12:
+		code_input._process(0.1)
+	# 打码面板自己收掉了；此时应该停在「准备」那一秒：游戏仍暂停、鼠标已收
+	var in_ready: bool = get_tree().paused and level_up.visible \
+		and not code_input.visible
+	print("全打对后 → 进入准备期 %s（暂停 %s）· %s" % [
+		in_ready, get_tree().paused, "OK" if in_ready else "FAIL"])
+	level_up._process(LevelUpUI.READY_SEC + 0.1)
+	var resumed: bool = not get_tree().paused and not level_up.visible
+	print("准备期结束 → 恢复游戏 %s · 升级框已收 %s · %s" % [
+		not get_tree().paused, not level_up.visible, "OK" if resumed else "FAIL"])
+	level_up.code_mode = CodeChallenge.Mode.OFF
 
 	# 打满所有升级项，验证兜底选项不会出现空卡片
 	for u in UpgradeDefs.UPGRADES:
@@ -1208,14 +1244,20 @@ func _test_code_ui() -> void:
 		ui._process(0.1)
 	print("  C 全角输入 -> %s" % ("OK   放行" if solved[0] == 1 else "FAIL 没放行"))
 
-	# 4 三档都能出题且严格档最长
+	# 4 三档都能出题且严格档最长（钉 variant 0，不然三档各抽各的题没法比）
 	var lens := []
 	for m in [CodeChallenge.Mode.EASY, CodeChallenge.Mode.STD, CodeChallenge.Mode.HARD]:
-		var ch := CodeChallenge.build("orbit", 8, false, m)
+		var ch := CodeChallenge.build("orbit", 8, false, m, 0)
 		lens.append(str(ch["text"]).length())
 	print("  D 三档长度 轻松%d < 标准%d < 严格%d -> %s" % [
 		lens[0], lens[1], lens[2],
 		"OK" if lens[0] < lens[1] and lens[1] < lens[2] else "FAIL"])
+
+	# 5 层叠：打码面板必须盖得住升级弹窗。
+	# 差一个 layer 的表现就是玩家说的「点了卡、升级框不消失、键盘打不了字」。
+	print("  E 层叠 打码 layer %d > 升级 layer %d -> %s" % [
+		ui.layer, level_up.layer,
+		"OK" if ui.layer > level_up.layer else "FAIL"])
 
 	ui.queue_free()
 	get_tree().quit()

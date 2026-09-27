@@ -37,7 +37,9 @@ var _indenting := false
 
 func _ready() -> void:
 	process_mode = Node.PROCESS_MODE_WHEN_PAUSED
-	layer = 5
+	# 必须高于升级弹窗（layer 10）：低于它的后果是升级卡片透上来盖住输入框，
+	# 玩家看到的就是「点了卡、升级框不消失、键盘打不了字」
+	layer = 20
 	_build()
 	hide()
 
@@ -120,9 +122,9 @@ func _spacer(h: int) -> Control:
 
 # ---------------------------------------------------------------- 生命周期
 
-func open(title_text: String, upgrade_id: String, target_level: int, is_evo: bool, m: int) -> void:
+func open(title_text: String, upgrade_id: String, target_level: int, is_evo: bool, m: int, variant: int = -1) -> void:
 	mode = m
-	var ch := CodeChallenge.build(upgrade_id, target_level, is_evo, m)
+	var ch := CodeChallenge.build(upgrade_id, target_level, is_evo, m, variant)
 	_target = str(ch["text"])
 	_title.text = title_text
 	_tip_l.text = "· " + str(ch["tip"]) + "　（%s·%s）" % [

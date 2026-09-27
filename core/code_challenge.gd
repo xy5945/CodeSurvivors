@@ -28,14 +28,46 @@ const MODE_HINTS := [
 const IDEOGRAPHIC_SPACE := 0x3000
 const TAB := 9
 
+## 抽变体用的随机源。延迟创建 + 首次 randomize：
+## RandomNumberGenerator 不 randomize 的话种子是固定的，每局出的题会一模一样。
+static var _rng: RandomNumberGenerator = null
+
+
+## 测试要可复现，就得能钉住种子（--codetest 用）
+static func set_seed(s: int) -> void:
+	if _rng == null:
+		_rng = RandomNumberGenerator.new()
+	_rng.seed = s
+
+
+## 测试钉完种子后要放开，否则正式开局出的题也固定了
+static func randomize_seed() -> void:
+	if _rng == null:
+		_rng = RandomNumberGenerator.new()
+	_rng.randomize()
+
+
+static func _pick(n: int) -> int:
+	if n <= 1:
+		return 0
+	if _rng == null:
+		_rng = RandomNumberGenerator.new()
+		_rng.randomize()
+	return _rng.randi_range(0, n - 1)
+
 
 # ---------------------------------------------------------------- 出题
 
 ## 生成一道题。is_evo（进化）走最难的满级题。
-static func build(upgrade_id: String, target_level: int, is_evo: bool, mode: int) -> Dictionary:
+## variant 传 -1（默认）表示在这级的变体里随机抽一道 —— 同一个升级项反复升满级
+## 不会永远打同一段代码；传具体下标则由调用方指定（测试用）。
+static func build(upgrade_id: String, target_level: int, is_evo: bool, mode: int, variant: int = -1) -> Dictionary:
 	var theme := CodeChallengeDB.theme_of(upgrade_id)
 	var lv: int = 8 if is_evo else clampi(target_level, 1, 8)
-	var lines: Array = CodeChallengeDB.frag(theme, lv)
+	var vi := variant
+	if vi < 0:
+		vi = _pick(CodeChallengeDB.variants(theme, lv))
+	var lines: Array = CodeChallengeDB.frag(theme, lv, vi)
 
 	if mode == Mode.EASY:
 		lines = _easy(lines)
@@ -46,9 +78,10 @@ static func build(upgrade_id: String, target_level: int, is_evo: bool, mode: int
 	return {
 		"theme": theme,
 		"level": lv,
+		"variant": vi,
 		"lines": lines,
 		"text": "\n".join(PackedStringArray(lines)),
-		"tip": CodeChallengeDB.tip(theme, lv),
+		"tip": CodeChallengeDB.tip(theme, lv, vi),
 	}
 
 
