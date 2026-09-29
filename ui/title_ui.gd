@@ -123,17 +123,6 @@ func _build() -> void:
 	help_btn.pressed.connect(func() -> void: help_requested.emit())
 	root.add_child(help_btn)
 
-	# 打码是强制的（升级必须打对代码），所以这里没有难度开关。
-	# 说明放在「游戏说明」右侧（原来难度开关的位置）：开局前就该知道要打字。
-	var code_note := Label.new()
-	code_note.text = "升级必须照打代码\n血空了可做题换命 × 3"
-	code_note.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	code_note.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
-	code_note.position = Vector2(412.0, 212.0)
-	code_note.size = Vector2(170.0, 36.0)
-	UiFont.apply(code_note, 9, Color(0.62, 0.70, 0.82, 1.0))
-	root.add_child(code_note)
-
 	var about_btn := UiFont.make_button("关于本作品", 12)
 	about_btn.position = Vector2(240.0, 250.0)
 	about_btn.size = Vector2(160.0, 24.0)

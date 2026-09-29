@@ -1,7 +1,7 @@
 class_name License
 extends RefCounted
 ##
-## 授权：把「哪款游戏 + 哪台电脑 + 多少天」编码成一串 20 个字符的激活码。
+## 授权：把「哪款游戏 + 哪台电脑 + 多少天 + 第几次发」编码成一串 21 个字符的激活码。
 ##
 ## 为什么不用非对称签名：Godot 4.7 的 Crypto 只提供 HMAC（对称），
 ## 没有 Ed25519，也没暴露公钥验签接口（已实测）。想自己手写 255 位大数
@@ -9,11 +9,16 @@ extends RefCounted
 ## 靠「绑定机器」把它拉回来：密钥就算被扒出来，也得先知道目标机器的
 ## 机器码才能造出可用的码，而机器码只在你发给学生的那一次才暴露。
 ##
-## 激活码的构成（12 字节 → Base32 20 个字符）
+## 激活码的构成（13 字节 → Base32 21 个字符）
 ##     game_id   1 字节   游戏编号，写在 core/license_key.gd 里
 ##     machine   5 字节   本机机器码原文
 ##     days      2 字节   授权天数，大端序；0 表示永久
-##     mac       4 字节   HMAC-SHA256(secret, 前 8 字节) 的前 4 字节
+##     seq       1 字节   流水号，发码工具每次随机取一个没用过的
+##     mac       4 字节   HMAC-SHA256(secret, 前 9 字节) 的前 4 字节
+##
+## 为什么要有流水号：前三个字段全是定死的，同一台机器续同一个天数会算出
+## **一模一样的码**，学生到期续期时会被最后一道关卡当成「用过了」拒掉。
+## 流水号参与 HMAC，所以改它算不出正确校验码（堵住「改一位再激活一次」）。
 ##
 ## 四道关卡，按代价从低到高排：先验校验码（挡住自己编的码），
 ## 再看游戏编号（挡住买别的游戏的人），然后比对机器码（挡住转发给别人），
@@ -26,9 +31,11 @@ const GAME_NAME := "代码幸存者"
 
 const KEY_PATH := "res://core/license_key.gd"
 
-const CODE_BYTES := 12        # game_id 1 + machine 5 + days 2 + mac 4
+const CODE_BYTES := 13        # game_id 1 + machine 5 + days 2 + seq 1 + mac 4
 const MACHINE_BYTES := 5
-const CODE_CHARS := 20
+const PAYLOAD_BYTES := 9      # game_id 1 + machine 5 + days 2 + seq 1（HMAC 只算这 9 字节）
+const MAC_BYTES := 4
+const CODE_CHARS := 21
 const MACHINE_CHARS := 8
 const SECRET_BYTES := 32
 const FINGERPRINT_BYTES := 4
@@ -192,12 +199,14 @@ static func _hmac(key: PackedByteArray, data: PackedByteArray) -> PackedByteArra
 	return Crypto.new().hmac_digest(HashingContext.HASH_SHA256, key, data)
 
 
-static func _payload(game_id: int, machine5: PackedByteArray, days: int) -> PackedByteArray:
+## HMAC 要保护的 9 字节。流水号在里头，改一位就验不过。
+static func _payload(game_id: int, machine5: PackedByteArray, days: int, seq: int = 0) -> PackedByteArray:
 	var p := PackedByteArray()
 	p.append(game_id)
 	p.append_array(machine5)
 	p.append((days >> 8) & 0xFF)
 	p.append(days & 0xFF)
+	p.append(seq & 0xFF)
 	return p
 
 
@@ -213,19 +222,20 @@ static func verify(code: String) -> Dictionary:
 
 	var raw := _b32_decode(code)
 	if raw.size() != CODE_BYTES:
-		res["reason"] = "激活码应该是 20 个字符，请看看是不是抄漏了"
+		res["reason"] = "激活码应该是 21 个字符，请看看是不是抄漏了"
 		return res
 
 	var gid := int(raw[0])
 	var m5 := raw.slice(1, 1 + MACHINE_BYTES)
 	var days := (int(raw[6]) << 8) | int(raw[7])
-	var mac := raw.slice(8, CODE_BYTES)
+	var seq := int(raw[8])
+	var mac := raw.slice(9, CODE_BYTES)
 
 	if gid != GAME_ID:
 		res["reason"] = "这个激活码属于另一款游戏（编号 %d），用不到《%s》上" % [gid, GAME_NAME]
 		return res
 
-	if _hmac(sec, _payload(gid, m5, days)).slice(0, 4) != mac:
+	if _hmac(sec, _payload(gid, m5, days, seq)).slice(0, MAC_BYTES) != mac:
 		res["reason"] = "激活码校验不通过，多半是有字符抄错了"
 		return res
 

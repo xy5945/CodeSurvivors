@@ -261,7 +261,9 @@ func _refresh() -> void:
 		_attr.text = _attr_text(d)
 	else:
 		_detail.text = "「%s」还没解锁 —— %s" % [d["name"], SaveData.unlock_hint(str(d["id"]))]
-		_attr.text = "难度 ×%s（敌人血量）" % _fmt_diff(float(d["diff"]))
+		var dens := float(d.get("density", 1.0))
+		var tail := "" if absf(dens - 1.0) <= 0.001 else " · 敌人数量 ×%s" % _fmt(dens)
+		_attr.text = "难度 ×%s（敌人血量）%s" % [_fmt_diff(float(d["diff"])), tail]
 	_sub.text = "已解锁 %d / %d　·　鼠标点击卡片 · 数字键 1~%d 选择 · Enter 开始 · ESC 返回" % [
 		SaveData.unlocked_count(), CharDefs.CHARACTERS.size(), CharDefs.CHARACTERS.size()]
 
@@ -280,13 +282,21 @@ func _attr_text(d: Dictionary) -> String:
 		parts.append("冷却 ×%s" % _fmt(float(d["cd_mult"])))
 	if absf(float(d["pickup_mult"]) - 1.0) > 0.001:
 		parts.append("拾取 ×%s" % _fmt(float(d["pickup_mult"])))
+	# 难度也列进这行：它和属性一样是"这个角色特殊在哪"的一部分。
+	# 数量系数只在 ≠1 时出现 —— 三个后段角色都是 1.0，全列出来只会制造噪音。
+	parts.append("难度 ×%s（敌人血量）" % _fmt_diff(float(d["diff"])))
+	var dens := float(d.get("density", 1.0))
+	if absf(dens - 1.0) > 0.001:
+		parts.append("敌人数量 ×%s" % _fmt(dens))
 	if parts.is_empty():
 		return "属性：标准配置（无修正）"
 	return "属性  " + "  ".join(PackedStringArray(parts))
 
 
+## 难度显示不能用 %.1f：0.85 会被截成 0.9，打印值和实际值差一档，
+## 比不打印更糟 —— 会让人以为改动没生效。用两位再去掉末尾的 0。
 func _fmt_diff(v: float) -> String:
-	return ("%.1f" % v)
+	return _fmt(v)
 
 
 func _fmt(v: float) -> String:

@@ -5,7 +5,7 @@ extends CanvasLayer
 ##
 ## 设计意图（用户原话）：孩子打不过不该立刻判死，给三次「做题换命」的机会。
 ## 题目是满级小题（最难的那一档），做对才复活，做错可以一直重来 ——
-## 但如果他不想做，必须有一个明确的出口（确认失败），不能把人卡死在面板里。
+## 但如果他不想做，必须有一个明确的出口（投降认输），不能把人卡死在面板里。
 ##
 ## 三个和暂停/结算面板同一套的硬要求：
 ##   1. process_mode = WHEN_PAUSED —— 整棵树都暂停着，默认收不到输入
@@ -100,7 +100,7 @@ func _build() -> void:
 	root.add_child(hint)
 
 	var hint2 := Label.new()
-	hint2.text = "机会用完就只能确认失败了"
+	hint2.text = "机会用完就只能投降认输了"
 	UiFont.apply(hint2, 9, C_DIM)
 	hint2.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	hint2.position = Vector2(px, py + 58.0)
@@ -115,7 +115,7 @@ func _build() -> void:
 	_live_btn.pressed.connect(func() -> void: _rescue())
 	root.add_child(_live_btn)
 
-	var give := UiFont.make_button("确认失败", 13, C_QUIT)
+	var give := UiFont.make_button("投降认输", 13, C_QUIT)
 	give.position = Vector2(bx, py + 124.0)
 	give.size = Vector2(BTN_W, BTN_H)
 	give.pressed.connect(func() -> void: _give_up())

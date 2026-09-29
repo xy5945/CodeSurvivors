@@ -180,7 +180,7 @@ func _submit() -> void:
 	var raw := _edit.text
 	var n := License.clean(raw).length()
 	if n != License.CODE_CHARS:
-		_set_msg("激活码应该是 20 个字符，现在填了 %d 个" % n, C_ERR)
+		_set_msg("激活码应该是 %d 个字符，现在填了 %d 个" % [License.CODE_CHARS, n], C_ERR)
 		return
 	var r := License.verify(raw)
 	if not bool(r["ok"]):

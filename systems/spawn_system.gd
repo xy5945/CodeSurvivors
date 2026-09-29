@@ -3,7 +3,8 @@ extends RefCounted
 ##
 ## 刷怪：在玩家周围的环形区域（屏幕外）生成敌人，场上数量追随时间曲线。
 ##
-## 数量曲线见 GameConfig.target_enemies()：开局 25 只，20 分钟爬到 800。
+## 数量曲线见 GameConfig.target_enemies()：开局 30 只，第 9 分半爬到 950 上限。
+## 前两个角色乘一个 <1 的数量系数（见 CharDefs.density），场上会略少一点。
 ## 敌人血量也随时间成长，否则后期一刀一片、难度曲线是平的。
 ##
 ## 分化投放（M3）：
@@ -73,7 +74,7 @@ func _spawn_one(sim, t: float, d_min: float = GameConfig.SPAWN_MIN_DIST,
 		d_max: float = GameConfig.SPAWN_MAX_DIST, type_i: int = -1,
 		force := false, fixed_hp := 0.0) -> void:
 	var e: EnemyPool = sim.enemies
-	var cap := GameConfig.target_enemies(t)
+	var cap := GameConfig.target_enemies(t, sim.density)
 	# Boss 战期间"挂起其他进程"：场上目标数压到 45%。
 	# 不压的话 950 只杂兵把 AoE 的命中上限（hit_cap）全部吃掉，
 	# Boss 分到的伤害不到六分之一，决战变成磨血马拉松（--smoke=20 实测 2 分钟打不死）。
@@ -92,9 +93,11 @@ func _spawn_one(sim, t: float, d_min: float = GameConfig.SPAWN_MIN_DIST,
 	var y: float = sim.player_y + sin(ang) * dist
 	# 速度随机化跟难度无关：难度只改血量，改速度会让"这局难在哪"变得说不清。
 	var spd: float = d.speed * (0.85 + randf() * 0.3)
-	# 普通怪：基础血量 × 时间成长 × 角色难度（0.8~1.2）。
-	# Boss：血量固定、不吃时间成长（它是设计好的一场决战），但难度照样要乘。
-	var hp: float = (fixed_hp * sim.difficulty) if fixed_hp > 0.0 else sim.enemy_hp(d.hp, t)
+	# 普通怪：基础血量 × 时间成长 × 角色难度（0.6~1.2，见 char_defs.diff）。
+	# Boss：血量固定、不吃时间成长（它是设计好的一场决战），难度照样要乘 ——
+	# 但系数 <1 时按 1 算：Boss 是设计好的一场决战，血量不该低于 80000，
+	# 否则实习生那档会出现"站桩也能过"的决战，决战感直接没了。
+	var hp: float = (fixed_hp * maxf(1.0, sim.difficulty)) if fixed_hp > 0.0 else sim.enemy_hp(d.hp, t)
 
-	if e.spawn(x, y, hp, spd, d.radius, type_i):
+	if e.spawn(x, y, hp, spd, d.radius, type_i, t):
 		sim._note_enemy_type(type_i)

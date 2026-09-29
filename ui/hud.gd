@@ -12,7 +12,6 @@ var _hp_fill: ColorRect
 var _lv_label: Label
 var _info: Label
 var _build_label: Label
-var _rescue_label: Label
 # Boss 血条：顶部中央，只在 Boss 在场时显示。
 # 48px 的大块头 + 4000 血，玩家必须能一眼看到"还剩多久打完"。
 var _boss_root: Control
@@ -69,15 +68,6 @@ func _ready() -> void:
 	UiFont.apply(_info, 12, Color(0.9, 0.92, 0.96, 0.92))
 	root.add_child(_info)
 
-	# 剩余救命次数：挂在右上角。孩子得随时知道自己还有几次机会，
-	# 不能等血空了才第一次听说有这回事。
-	_rescue_label = Label.new()
-	_rescue_label.position = Vector2(500.0, 28.0)
-	_rescue_label.size = Vector2(130.0, 16.0)
-	_rescue_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
-	UiFont.apply(_rescue_label, 11, Color(1.0, 0.75, 0.45, 1.0))
-	root.add_child(_rescue_label)
-
 	_build_label = Label.new()
 	_build_label.set_anchors_preset(Control.PRESET_BOTTOM_LEFT)
 	_build_label.position = Vector2(11, -30)
@@ -111,12 +101,6 @@ func _boss_bar(root: Control) -> void:
 	_boss_label.text = "编译器反噬"
 	_boss_root.add_child(_boss_label)
 
-
-## 剩余救命次数（main.gd 在开局和每次用掉后调）
-func set_rescue(n: int) -> void:
-	if _rescue_label == null:
-		return
-	_rescue_label.text = "" if n <= 0 else "救我一命 × %d" % n
 
 
 func update_stats(delta: float, sim: Sim) -> void:

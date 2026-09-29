@@ -181,7 +181,7 @@ static func run_smoke(minutes: float = 10.0, cid: String = "") -> void:
 			print("  %2d 分   Lv %2d   击杀 %5d   场上敌人 %4d   地面宝石 %4d   目标数 %4d   [%s]" % [
 				int(sim.time / 60.0), sim.level, sim.kills,
 				sim.enemies.count, sim.gems.count,
-				GameConfig.target_enemies(sim.time),
+				GameConfig.target_enemies(sim.time, sim.density),
 				_composition(sim.enemies)
 			])
 		step += 1
@@ -197,6 +197,11 @@ static func run_smoke(minutes: float = 10.0, cid: String = "") -> void:
 		sim.elite_skills, sim.elite_dashes, sim.elite_novas, sim.elite_splits,
 		sim.boss_skills, sim.boss_dashes, sim.boss_novas, sim.boss_aimeds,
 		sim.boss_homings, sim.boss_hazards, sim.boss_summons
+	])
+	print("精英战斗时长：打死 %d 只，平均 %.1f 秒（目标 10~20 秒）· 场上还剩 %d 只" % [
+		sim.elite_fight_n,
+		(sim.elite_fight_sum / float(sim.elite_fight_n)) if sim.elite_fight_n > 0 else 0.0,
+		EnemyDB.elite_alive(sim.enemies)
 	])
 	print("敌方弹幕：累计发射 %d 发 · 当前场上 %d 发" % [sim.bullets_fired, sim.bullets.count])
 	var build := []
@@ -936,11 +941,11 @@ static func run_char() -> void:
 ##   ② **发码工具（Python，另一套独立实现）造的码也能过**
 ## 两种语言算同一个 HMAC，只要有一处对不齐（字节序、截断长度、Base32
 ## 填充位），第 2 项就会炸。所以下面钉了一个工具真实产出的码。
-const TOOL_CODE := "AEDN-L5TK-6AAB-5J32-JWQQ"   # python keygen.py -g code_survivors -m A3K7-M2XQ -d 30
+const TOOL_CODE := "AEDN-L5TK-6AAB-4AF2-SC6O-Q"   # python keygen.py -g code_survivors -m A3K7-M2XQ -d 30 -s 0
 const TOOL_MACHINE := "A3K7-M2XQ"
 ## 第二张真码（同机器 90 天）：用来验证「换一张新码可以正常续期」。
-## python keygen.py -g code_survivors -m A3K7-M2XQ -d 90
-const TOOL_CODE2 := "AEDN-L5TK-6AAF-VPPK-7BIQ"
+## python keygen.py -g code_survivors -m A3K7-M2XQ -d 90 -s 0
+const TOOL_CODE2 := "AEDN-L5TK-6AAF-UAEK-UN4W-6"
 
 
 static func run_license() -> void:
@@ -976,11 +981,8 @@ static func run_license() -> void:
 
 ## 用游戏端自己的算法造一个码。只用来在测试里扮演发码工具，
 ## 验证「换游戏编号 / 换机器码 / 改天数」这些分支会被正确拒绝。
-static func _make_code(gid: int, m5: PackedByteArray, days: int) -> String:
-	var p := PackedByteArray([gid])
-	p.append_array(m5)
-	p.append((days >> 8) & 0xFF)
-	p.append(days & 0xFF)
+static func _make_code(gid: int, m5: PackedByteArray, days: int, seq: int = 0) -> String:
+	var p := License._payload(gid, m5, days, seq)
 	var mac := License._hmac(License.secret(), p).slice(0, 4)
 	return License.group(License._b32_encode(p + mac))
 
@@ -1210,9 +1212,9 @@ static func _t_save_persist() -> void:
 		_ok(before == 2 and after == 2 and cleared_ok and reset_ok)])
 
 
-## 3 难度系数：0.7 / 0.85 / 1.0 / 1.1 / 1.2（只影响敌人血量）
+## 3 难度系数：0.6 / 0.8 / 1.0 / 1.1 / 1.2（只影响敌人血量）
 static func _t_save_diff() -> void:
-	var want := [0.7, 0.85, 1.0, 1.1, 1.2]
+	var want := [0.6, 0.8, 1.0, 1.1, 1.2]
 	var got: Array[float] = []
 	for c in CharDefs.CHARACTERS:
 		got.append(CharDefs.diff_of(str(c["id"])))
@@ -1252,7 +1254,7 @@ static func _t_save_hp() -> void:
 
 ## 难度显示：0.85 绝不能被 %.1f 截成 0.8。
 ## 打印值和实际值差一个档，比不打印更糟 —— 会让人以为改动没生效。
-## 去掉末尾的 0：0.70 → ×0.7、0.85 → ×0.85、1.00 → ×1。
+## 去掉末尾的 0：0.60 → ×0.6、0.85 → ×0.85、1.00 → ×1。
 static func _diff_text(v: float) -> String:
 	var t := "%.2f" % v
 	while t.ends_with("0"):
@@ -2254,7 +2256,7 @@ static func run_skill_test() -> void:
 	print("A 精英 45 秒（玩家不动，看它放什么）")
 	print("   技能 %d 次（冲刺 %d · 环形弹幕 %d）· 发射弹幕 %d 发 · 同屏峰值 %d 发"
 		% [s1.elite_skills, s1.elite_dashes, s1.elite_novas, s1.bullets_fired, peak_b])
-	print("   精英存活 %d 只 · 血量 %.0f / %.0f（hp 从 150 提到 350 = 磨得动但更久）"
+	print("   精英存活 %d 只 · 血量 %.0f / %.0f（hp 150 → 350 → 650 = 点名目标要打得住）"
 		% [elite_left, elite_hp_left, elite_hp0])
 	print("   存活 %s" % ("是 —— 技能状态机没跑起来" if s1.elite_skills == 0 else "是"))
 

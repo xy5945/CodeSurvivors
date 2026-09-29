@@ -32,10 +32,14 @@ var char_id := CharDefs.DEFAULT_ID
 var char_def: Dictionary
 var char_trait := CharDefs.T_LEARN
 var char_hp_mult := 1.0       # 角色属性修正（乘算，见 char_defs）
-# 角色难度：**只作用于敌人血量**（0.7 简单 → 1.2 困难，见 char_defs.diff）。
-# 不动敌人速度/伤害/数量 —— 那几样一动，"这一局难在哪"就说不清了，
+# 角色难度：**只作用于敌人血量**（0.6 简单 → 1.2 困难，见 char_defs.diff）。
+# 不动敌人速度/伤害 —— 那两样一动，"这一局难在哪"就说不清了，
 # 玩家也没法判断是自己变强了还是敌人变弱了。
 var difficulty := 1.0
+# 数量压力：只作用于场上敌人的**数量**（见 char_defs.density）。
+# 和难度系数分开是刻意的 —— 血量偏软 + 数量偏少会叠成"空场"，
+# 前两个角色要的是"敌人够多但每一个都好打"。
+var density := 1.0
 var char_speed_mult := 1.0
 var iframe_mult := 1.0        # 测试工程师：受击后的无敌时间倍率
 var _cron_timer := 0.0        # 全栈工程师：兜底回血计时
@@ -84,6 +88,8 @@ var boss_summons := 0
 var elite_skills := 0      # 精英技能总次数（含冲刺与弹幕）
 var elite_novas := 0
 var elite_splits := 0      # 精英死亡分裂次数
+var elite_fight_sum := 0.0  # 精英从出生到被打死的总时长（秒），用来校核血量
+var elite_fight_n := 0     # 参与统计的精英数（平均时长 = sum / n）
 var boss_skills := 0
 var boss_novas := 0
 var boss_aimeds := 0
@@ -149,6 +155,7 @@ func setup(cid := CharDefs.DEFAULT_ID) -> void:
 
 	char_hp_mult = float(char_def["hp_mult"])
 	difficulty = CharDefs.diff_of(char_id)
+	density = CharDefs.density_of(char_id)
 	char_speed_mult = float(char_def["speed_mult"])
 	loadout.char_dmg_mult = float(char_def["dmg_mult"])
 	loadout.char_cd_mult = float(char_def["cd_mult"])
@@ -728,6 +735,11 @@ func _reap() -> void:
 					e.py[i] + randf_range(-8.0, 8.0),
 					true
 				)
+				# 战斗时长 = 从出生到被打死。这是精英血量的唯一校验手段：
+				# 目标是 10~20 秒（够玩家做一次"要不要收它"的判断，又不至于拖沓），
+				# 血少了变成顺手清掉，血多了变成磨血—— 都失去了"点名目标"的意义。
+				elite_fight_sum += time - e.spawn_t[i]
+				elite_fight_n += 1
 				_split_elite(e.px[i], e.py[i])
 			# 补丁包是"额外掉落"：宝石必掉，保证经验曲线不受回血概率影响。
 			# 位置随机偏一点，否则两个掉落物完全重叠，看不出是两个。
@@ -752,7 +764,7 @@ func _reap() -> void:
 
 ## 精英死亡时"异常扩散"：分裂出一小圈最弱杂兵。
 ##
-## 为什么要有这个：精英的血量提高之后（150 → 350），玩家很自然会
+## 为什么要有这个：精英的血量提高之后（150 → 350 → 650），玩家很自然会
 ## "贴上去磨死它"。一个会分裂的精英改变了这个决定 —— 磨它的时间越长，
 ## 分裂的怪越快把你围住。它把"打精英"从纯 DPS 检查变成"什么时候去收"的取舍。
 ## 敌人血量的唯一算法：基础 × 时间成长 × 角色难度。

@@ -58,7 +58,7 @@ const RESCUE_HEAL := 100.0
 ## 复活后的无敌时间：不做这一步，玩家会在原地被围着的怪再打死一次
 const RESCUE_IFRAME := 3.0
 var _rescue_left := RESCUE_MAX
-var _rescue_gave_up := false   # 玩家主动点了「确认失败」
+var _rescue_gave_up := false   # 玩家主动点了「投降认输」
 var _rescue_active := false    # 打码面板当前是不是在给救援用
 # 通关解锁：一局只记一次（_update_end 每帧都会被调，不能重复记账）
 var _unlock_recorded := false
@@ -618,7 +618,6 @@ func _set_gameplay_ui(on: bool) -> void:
 	if on:
 		# 打码是强制的：老存档里存过「不打码」的，开局一律钉回标准档
 		level_up.code_mode = CodeChallenge.Mode.STD
-		hud.set_rescue(_rescue_left)
 
 
 ## 标题画面点掉之后进选人。
@@ -759,7 +758,7 @@ func _resulttest() -> void:
 
 ## 运行：godot --headless --path . -- --rescuetest
 ## 「救我一命」整条链路：血空 -> 弹选择题 -> 打对满级题 -> 复活 100 血；
-## 三次用完 / 主动确认失败 -> 直接进失败结算。
+## 三次用完 / 主动投降认输 -> 直接进失败结算。
 func _rescuetest() -> void:
 	print("")
 	print("=== 救我一命 ===")
@@ -820,7 +819,7 @@ func _rescuetest() -> void:
 	Bench._tally(ok, result.is_open() and not rescue.is_open(),
 		"机会用光后再死 → 直接进失败结算")
 
-	# F 没用光时点「确认失败」→ 立刻结算，不再给机会
+	# F 没用光时点「投降认输」→ 立刻结算，不再给机会
 	result.debug_reset()
 	sim.dead = false
 	_rescue_left = 2
@@ -836,7 +835,7 @@ func _rescuetest() -> void:
 	_update_end(1.0)
 	_update_end(1.0)
 	Bench._tally(ok, opened and result.is_open(),
-		"确认失败 → 放弃剩余机会直接结算（还剩 %d 次也照判）" % _rescue_left)
+		"投降认输 → 放弃剩余机会直接结算（还剩 %d 次也照判）" % _rescue_left)
 
 	print("结果 %d/%d" % [ok[0], ok[1]])
 	print("")
@@ -1227,7 +1226,7 @@ func _update_end(delta: float) -> void:
 		return
 
 	# 死亡但还有救命机会：先弹「救我一命」，不直接判死。
-	# 通关、机会用完、玩家自己点了确认失败，才走结算面板。
+	# 通关、机会用完、玩家自己点了投降认输，才走结算面板。
 	if sim.dead and not sim.victory and not _rescue_gave_up and _rescue_left > 0:
 		rescue.open(_rescue_left)
 		return
@@ -1274,10 +1273,9 @@ func _rescue_revive() -> void:
 	Sfx.restart_bgm()
 	get_tree().paused = false
 	Input.set_mouse_mode(Input.MOUSE_MODE_HIDDEN)
-	hud.set_rescue(_rescue_left)
 
 
-## 确认失败：放弃剩下的机会，直接进结算
+## 投降认输：放弃剩下的机会，直接进结算
 func _on_rescue_give_up() -> void:
 	Sfx.play("ui")
 	_rescue_gave_up = true

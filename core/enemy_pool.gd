@@ -35,6 +35,11 @@ var cc_res := PackedFloat32Array()
 # 冻结同时附带 +50% 易伤（见 dmg_mult）—— 只冻不打等于浪费一次控制，
 # 玩家会觉得"这把武器没伤害"，所以控制和增伤必须绑在一起。
 var freeze := PackedFloat32Array()
+# 出生的时刻（sim.time 的绝对值，秒）。
+# 只为**精英**统计战斗时长：精英要的是"值得点名的持久战"，
+# 它的存活时间是一条平衡指标（目标 10~20 秒），没有这个字段就只能靠
+# 拍脑袋调血量。杂兵成片生灭，记这个没有意义，但仍全员同构（池的要求）。
+var spawn_t := PackedFloat32Array()
 # 行走动画相位，取值 [0, FRAMES)。spawn 时随机初始化 ——
 # 不随机的话全场敌人整齐划一地踏步，看着像机器军团。
 var anim := PackedFloat32Array()
@@ -71,6 +76,7 @@ func _init(cap: int) -> void:
 	freeze.resize(cap)
 	anim.resize(cap)
 	type.resize(cap)
+	spawn_t.resize(cap)
 	skill_cd.resize(cap)
 	skill_state.resize(cap)
 	skill_t.resize(cap)
@@ -83,7 +89,8 @@ func capacity() -> int:
 	return px.size()
 
 
-func spawn(x: float, y: float, hp_v: float, spd_v: float, rad_v: float, type_v: int = 0) -> bool:
+func spawn(x: float, y: float, hp_v: float, spd_v: float, rad_v: float,
+		type_v: int = 0, t: float = 0.0) -> bool:
 	if count >= px.size():
 		return false
 	px[count] = x
@@ -99,6 +106,7 @@ func spawn(x: float, y: float, hp_v: float, spd_v: float, rad_v: float, type_v: 
 	cc_res[count] = float(EnemyDB.DEFS[type_v].get("cc_res", 1.0))
 	anim[count] = randf() * float(FRAMES)
 	type[count] = type_v
+	spawn_t[count] = t
 	skill_cd[count] = 3.0 + randf() * 2.0    # 出生先普走几秒，技能别开场就放
 	skill_state[count] = 0
 	skill_t[count] = 0.0
@@ -127,6 +135,7 @@ func kill(i: int) -> void:
 		cc_res[i] = cc_res[last]
 		anim[i] = anim[last]
 		type[i] = type[last]
+		spawn_t[i] = spawn_t[last]
 		skill_cd[i] = skill_cd[last]
 		skill_state[i] = skill_state[last]
 		skill_t[i] = skill_t[last]

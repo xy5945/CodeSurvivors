@@ -19,7 +19,7 @@ signal back_requested
 
 # 手写常量（改代码结构时要回来改这两个）
 const VERSION := "v1.0.0"
-const CODE_LINE_HINT := "12,900+ 行 GDScript（60 个脚本）"
+const CODE_LINE_HINT := "13,000+ 行 GDScript（64 个脚本）"
 
 const C_TITLE := Color(1.0, 0.88, 0.42, 1.0)
 const C_GOLD := Color(0.86, 0.72, 0.32, 1.0)
@@ -177,6 +177,17 @@ func _fill() -> void:
 	_add_para("稚码园机器人编程，用游戏点燃孩子的代码梦想。")
 	_add_para("我们相信每个孩子都能创造自己的世界。")
 	_add_para("编程不是枯燥的代码，而是创造的工具。")
+	_add_para("「我们不教孩子背代码，我们让孩子在创造里用熟它。」")
+	_sp(4)
+
+	_add_head("◆ 边玩边练：游戏里的代码训练")
+	_add_para("升级不是点一下按钮就完事：三选一之后，要照着屏幕把一段真实的 C++ 代码打出来，全打对了才升级。救我一命也是 —— 想续命，就打一道完整小题。")
+	_add_para("题库全部取自 C++ 入门到进阶最常用的写法，覆盖 GESP C++ 一至四级的高频关键字和标准语句：变量与输入输出、分支 if / else / switch、循环 for / while / do-while、数组与二维数组、指针与 new / delete……")
+	_add_para("孩子为了变强会一遍遍亲手打这些代码 —— 手熟了，代码就不再是拦路虎。玩得开心，代码熟练度不知不觉就上去了。")
+	_sp(4)
+
+	_add_head("◆ 姊妹作品")
+	_add_para("《守护稚码王国》：pygame 开发的暗黑魔幻塔防，每波清完同样要打一段 C++ 代码领补给，与本作共用同一套题库。")
 	_sp(4)
 
 	_add_head("◆ 创作理念")
