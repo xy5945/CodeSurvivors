@@ -543,7 +543,7 @@ func _ready() -> void:
 
 	if OS.get_cmdline_user_args().has("--uitest"):
 		set_process(false)
-		_uitest()
+		await _uitest()      # 里面有 await（真按键要等一帧），不能同步调用完就 quit
 		get_tree().quit()
 		return
 
@@ -867,6 +867,21 @@ func _collect_buttons(n: Node, out: Array[Button]) -> void:
 		_collect_buttons(c, out)
 
 
+## 发一个真按键（按下 + 抬起），测试专用。
+## 直接给 TextEdit.text 赋值不走事件链，测不出"按键穿透到全局快捷键"这类问题
+## —— 打码时按 m 把全局静音拨乱那次，就是因为没人用真按键测过。
+func _push_key(ch: String) -> void:
+	var ev := InputEventKey.new()
+	ev.pressed = true
+	ev.keycode = OS.find_keycode_from_string(ch)
+	ev.physical_keycode = ev.keycode
+	ev.unicode = ch.unicode_at(0)
+	Input.parse_input_event(ev)
+	var up := ev.duplicate()
+	up.pressed = false
+	Input.parse_input_event(up)
+
+
 func _uitest() -> void:
 	# 这套测试验证的是「点卡 -> 立即升级生效」这条旧链路；
 	# 打码链路有自己的 --codetest，两边各守各的，别互相干扰
@@ -971,6 +986,35 @@ func _uitest() -> void:
 	about.close()
 	print("  返回后 · 打开=%s · %s" % [about.is_open(),
 		"OK" if not about.is_open() else "FAIL"])
+
+	# ---- 打码打字时按 M 不许静音 ----
+	# 事故原型：题目里每个字母 m 都会拨一次静音开关（main/max/sum/num...），
+	# 打完一道 m 的个数是奇数的题，整局就没声了。这里必须发真按键才测得出来 ——
+	# 直接给 _edit.text 赋值不会走输入事件，永远测不到。
+	print("")
+	print("=== 打字时的静音键 ===")
+	code_input.open_rescue("静音键测试", CodeChallenge.Mode.STD)
+	await get_tree().process_frame
+	var focus_ok: bool = code_input._edit.has_focus()
+	# 奇数次：修好之前这一串打完就是"静音"状态
+	for i in 3:
+		_push_key("m")
+		await get_tree().process_frame
+	var quiet: bool = Sfx.is_muted() or AudioServer.is_bus_mute(0)
+	print("  打码框已获得焦点=%s · 打字中按 3 次 m → 静音=%s · %s" % [
+		focus_ok, quiet, "OK" if focus_ok and not quiet else "FAIL"])
+	code_input.hide()
+	code_input._edit.release_focus()
+	await get_tree().process_frame
+	_push_key("m")
+	await get_tree().process_frame
+	var can_mute: bool = Sfx.is_muted() or AudioServer.is_bus_mute(0)
+	print("  非打字时按 m → 静音=%s · %s" % [can_mute, "OK" if can_mute else "FAIL"])
+	# 复原，别把静音状态留给后面的用例
+	if can_mute:
+		_push_key("m")
+		await get_tree().process_frame
+	get_tree().paused = false
 	print("")
 
 
@@ -1087,7 +1131,9 @@ func _input(event: InputEvent) -> void:
 	var ke := event as InputEventKey
 	if ke.keycode != KEY_ESCAPE or not ke.pressed or ke.echo:
 		return
-	if help.is_open() or about.is_open():
+	# 打码面板开着时不许穿透：TextEdit 吃掉按键后事件照样会送到这里，
+	# 在「救我一命」打题时按 Esc 会把暂停菜单叠到打字框上。
+	if help.is_open() or about.is_open() or code_input.visible:
 		return
 	_toggle_pause()
 	get_viewport().set_input_as_handled()

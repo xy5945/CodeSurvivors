@@ -304,12 +304,32 @@ func is_muted() -> bool:
 
 ## M 键静音。放在音频层而不是 main.gd：暂停中（升级弹窗打开）也要能静音，
 ## 而 main.gd 的 _process 此时是被暂停的，收不到。
+##
+## ⚠️ 必须在「正在打字」时让路。C++ 题目里到处是字母 m
+##（main / max / min / sum / num / rand / time ...），而打码面板用的是
+## TextEdit —— 它吃掉按键后事件照样会送到 autoload 的 _input 里，
+## 于是每打一个 m 就把全局静音开关拨一次。题目里 m 的个数是奇数时，
+## 打完这道题游戏就彻底没声了（救我一命那道满级小题最长，最容易踩）。
 func _input(event: InputEvent) -> void:
 	var k := event as InputEventKey
 	if k == null or not k.pressed or k.echo:
 		return
-	if k.physical_keycode == KEY_M:
-		print("[Sfx] 静音 %s" % ("开" if toggle_mute() else "关"))
+	if k.physical_keycode != KEY_M:
+		return
+	if _is_typing():
+		return
+	print("[Sfx] 静音 %s" % ("开" if toggle_mute() else "关"))
+
+
+## 焦点在文本输入框里 = 玩家正在打字，此时任何单键快捷键都不该插进来。
+## 用焦点判断而不是"某个面板是否可见"：面板可见但焦点在按钮上时，
+## M 键照样该生效（那就是玩家真的想按 M）。
+func _is_typing() -> bool:
+	var vp := get_viewport()
+	if vp == null:
+		return false
+	var f := vp.gui_get_focus_owner()
+	return f is TextEdit or f is LineEdit or f is CodeEdit
 
 
 # ------------------------------------------------------------ 播放池
